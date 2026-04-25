@@ -64,3 +64,48 @@ where
         &self.samples
     }
 }
+
+#[inline(always)]
+pub fn copy_from_slice(src: &[f32], dst: &mut [f32]) {
+    dst.copy_from_slice(src);
+}
+
+#[inline(always)]
+pub fn add_assign_elements(src: &[f32], dst: &mut [f32]) {
+    for (d, s) in dst.iter_mut().zip(src.iter()) {
+        *d += *s;
+    }
+}
+
+#[inline(always)]
+pub fn multiply_scalar(src: &[f32], dst: &mut [f32], scalar: f32) {
+    for (d, s) in dst.iter_mut().zip(src.iter()) {
+        *d = *s * scalar;
+    }
+}
+
+#[inline(always)]
+pub fn multiply_scalar_in_place(buffer: &mut [f32], scalar: f32) {
+    for sample in buffer.iter_mut() {
+        *sample = *sample * scalar;
+    }
+}
+
+#[inline(always)]
+pub fn multiply_scalar_and_add(src: &[f32], dst: &mut [f32], scalar: f32) {
+    for (d, s) in dst.iter_mut().zip(src.iter()) {
+        *d += *s * scalar;
+    }
+}
+
+#[inline(always)]
+pub fn get_abs_peak(buffer: &[f32]) -> f32 {
+    buffer.iter().map(|&x| x.abs()).fold(0., f32::max)
+}
+
+#[inline(always)]
+pub fn zero_slice(buffer: &mut [f32]) {
+    for sample in buffer.iter_mut() {
+        *sample = 0.;
+    }
+}

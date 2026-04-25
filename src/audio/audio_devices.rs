@@ -32,7 +32,7 @@ fn configure_pcm(
     let hwp = HwParams::any(pcm)?;
 
     hwp.set_access(Access::RWInterleaved)?;
-    hwp.set_format(Format::s16())?;
+    hwp.set_format(Format::s32())?;
     hwp.set_channels(num_channels)?;
 
     // Disable ALSA's software resampling — we do our own pitch-based resampling

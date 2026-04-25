@@ -1,11 +1,24 @@
 import { Slider, VerticalBox } from "std-widgets.slint";
+import { ReverbPanel } from "reverb_panel.slint";
 
 export component MainWindow inherits Window {
     title: "neosynth";
-    preferred-width: 420px;
-    preferred-height: 140px;
+    preferred-width: 480px;
+    preferred-height: 720px;
 
     callback gain-changed(float);
+
+    callback reverb-size-changed(float);
+    callback reverb-feedback-changed(float);
+    callback reverb-balance-changed(float);
+    callback reverb-pre-delay-changed(float);
+    callback reverb-hpf-changed(float);
+    callback reverb-lpf-changed(float);
+    callback reverb-chorus-changed(float);
+    callback reverb-dry-changed(float);
+    callback reverb-wet-changed(float);
+    callback reverb-send-changed(float);
+
     in-out property <float> gain: 1.0;
 
     VerticalBox {
@@ -22,6 +35,18 @@ export component MainWindow inherits Window {
                 root.gain = v;
                 root.gain-changed(v);
             }
+        }
+        ReverbPanel {
+            size-changed(v) => { root.reverb-size-changed(v); }
+            feedback-changed(v) => { root.reverb-feedback-changed(v); }
+            balance-changed(v) => { root.reverb-balance-changed(v); }
+            pre-delay-changed(v) => { root.reverb-pre-delay-changed(v); }
+            hpf-changed(v) => { root.reverb-hpf-changed(v); }
+            lpf-changed(v) => { root.reverb-lpf-changed(v); }
+            chorus-changed(v) => { root.reverb-chorus-changed(v); }
+            dry-changed(v) => { root.reverb-dry-changed(v); }
+            wet-changed(v) => { root.reverb-wet-changed(v); }
+            send-changed(v) => { root.reverb-send-changed(v); }
         }
     }
 }

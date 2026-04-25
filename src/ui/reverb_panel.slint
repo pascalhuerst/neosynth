@@ -1,0 +1,83 @@
+import { Slider, VerticalBox } from "std-widgets.slint";
+
+component LabeledSlider {
+    in property <string> label;
+    in property <float> minimum: 0.0;
+    in property <float> maximum: 1.0;
+    in-out property <float> value: 0.0;
+    callback changed(float);
+
+    VerticalLayout {
+        spacing: 2px;
+        Text {
+            text: root.label + ": " + root.value;
+        }
+        Slider {
+            minimum: root.minimum;
+            maximum: root.maximum;
+            value <=> root.value;
+            changed(v) => { root.changed(v); }
+        }
+    }
+}
+
+export component ReverbPanel {
+    callback size-changed(float);
+    callback feedback-changed(float);
+    callback balance-changed(float);
+    callback pre-delay-changed(float);
+    callback hpf-changed(float);
+    callback lpf-changed(float);
+    callback chorus-changed(float);
+    callback dry-changed(float);
+    callback wet-changed(float);
+    callback send-changed(float);
+
+    VerticalBox {
+        Text {
+            text: "Reverb";
+            font-size: 18px;
+            horizontal-alignment: center;
+        }
+        LabeledSlider {
+            label: "Size"; minimum: 0; maximum: 1; value: 0.5;
+            changed(v) => { root.size-changed(v); }
+        }
+        LabeledSlider {
+            label: "Feedback"; minimum: 0; maximum: 1; value: 0.7;
+            changed(v) => { root.feedback-changed(v); }
+        }
+        LabeledSlider {
+            label: "Balance"; minimum: 0; maximum: 1; value: 0.5;
+            changed(v) => { root.balance-changed(v); }
+        }
+        LabeledSlider {
+            label: "Pre-delay (ms)"; minimum: 0; maximum: 200; value: 5;
+            changed(v) => { root.pre-delay-changed(v); }
+        }
+        LabeledSlider {
+            label: "HPF (Hz)"; minimum: 20; maximum: 2000; value: 200;
+            changed(v) => { root.hpf-changed(v); }
+        }
+        LabeledSlider {
+            label: "LPF (Hz)"; minimum: 200; maximum: 20000; value: 8000;
+            changed(v) => { root.lpf-changed(v); }
+        }
+        LabeledSlider {
+            label: "Chorus"; minimum: 0; maximum: 1; value: 0.5;
+            changed(v) => { root.chorus-changed(v); }
+        }
+        LabeledSlider {
+            label: "Dry"; minimum: 0; maximum: 1; value: 1.0;
+            changed(v) => { root.dry-changed(v); }
+        }
+        LabeledSlider {
+            label: "Wet"; minimum: 0; maximum: 1; value: 0.3;
+            changed(v) => { root.wet-changed(v); }
+        }
+        LabeledSlider {
+            label: "Send"; minimum: 0; maximum: 1; value: 1.0;
+            changed(v) => { root.send-changed(v); }
+        }
+    }
+}

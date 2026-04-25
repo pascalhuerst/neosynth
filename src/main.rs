@@ -1,4 +1,5 @@
 mod audio;
+mod dsp;
 mod ui;
 
 use anyhow::Result;
@@ -7,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 const SAMPLE_RATE: u32 = 48_000;
 const AUDIO_CPU: usize = 2;
-const PARAM_CHANNEL_CAPACITY: usize = 64;
+const PARAM_CHANNEL_CAPACITY: usize = 1024;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
