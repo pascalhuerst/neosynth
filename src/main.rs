@@ -1,4 +1,5 @@
 mod audio;
+mod ui;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -26,12 +27,13 @@ fn main() -> Result<()> {
     }
 
     let params = audio::create_parameter_channel(PARAM_CHANNEL_CAPACITY);
-    let _param_producer = params.producer;
 
     let engine = audio::Engine::new("default".to_string(), "default".to_string(), SAMPLE_RATE);
-    let handle = engine.run(running, params.consumer, AUDIO_CPU)?;
+    let audio_handle = engine.run(running.clone(), params.consumer, AUDIO_CPU)?;
 
-    handle
+    ui::run(params.producer, running.clone())?;
+
+    audio_handle
         .join()
         .map_err(|_| anyhow::anyhow!("audio thread panicked"))?;
 

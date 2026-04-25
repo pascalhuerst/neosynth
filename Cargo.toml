@@ -2,6 +2,7 @@
 name = "neosynth"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
 alsa = "0.9"
@@ -10,8 +11,12 @@ ctrlc = "3"
 libc = "0.2"
 num-traits = "0.2"
 ringbuf = "0.4"
+slint = "1.10"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+slint-build = "1.10"
 
 [profile.release]
 lto = "thin"

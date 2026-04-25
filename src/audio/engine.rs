@@ -14,7 +14,6 @@ pub struct Engine {
     output_device: String,
     sample_rate: u32,
     buffer_size: Option<u32>,
-    capture_buffer_size: Option<u32>,
 }
 
 impl Engine {
@@ -24,16 +23,11 @@ impl Engine {
             output_device,
             sample_rate,
             buffer_size: None,
-            capture_buffer_size: None,
         }
     }
 
     pub fn set_buffer_size(&mut self, size: u32) {
         self.buffer_size = Some(size);
-    }
-
-    pub fn set_capture_buffer_size(&mut self, size: u32) {
-        self.capture_buffer_size = Some(size);
     }
 
     pub fn run(
@@ -49,8 +43,6 @@ impl Engine {
             num_output_channels: 2,
             sample_rate: self.sample_rate,
             buffer_size: self.buffer_size,
-            capture_buffer_size: self.capture_buffer_size,
-            period_size: None,
         };
 
         let (input_pcm, output_pcm, _) = configure_audio_devices(&alsa_settings)?;
@@ -96,7 +88,6 @@ fn run_audio_loop(
             match update {
                 InputParameters::LinearGain(g) => {
                     gain = g as f32;
-                    tracing::info!("Linear gain set to {}", gain);
                 }
             }
         }

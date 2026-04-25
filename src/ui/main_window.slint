@@ -1,0 +1,27 @@
+import { Slider, VerticalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "neosynth";
+    preferred-width: 420px;
+    preferred-height: 140px;
+
+    callback gain-changed(float);
+    in-out property <float> gain: 1.0;
+
+    VerticalBox {
+        Text {
+            text: "Linear gain: " + root.gain;
+            horizontal-alignment: center;
+            font-size: 16px;
+        }
+        Slider {
+            minimum: 0.0;
+            maximum: 2.0;
+            value: root.gain;
+            changed(v) => {
+                root.gain = v;
+                root.gain-changed(v);
+            }
+        }
+    }
+}
