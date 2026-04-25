@@ -21,6 +21,7 @@ pub struct Engine {
     output_device: String,
     sample_rate: u32,
     buffer_size: Option<u32>,
+    period_size: Option<u32>,
 }
 
 impl Engine {
@@ -30,11 +31,16 @@ impl Engine {
             output_device,
             sample_rate,
             buffer_size: None,
+            period_size: None,
         }
     }
 
     pub fn set_buffer_size(&mut self, size: u32) {
         self.buffer_size = Some(size);
+    }
+
+    pub fn set_period_size(&mut self, size: u32) {
+        self.period_size = Some(size);
     }
 
     pub fn run(
@@ -50,6 +56,7 @@ impl Engine {
             num_output_channels: NUM_CHANNELS as u32,
             sample_rate: self.sample_rate,
             buffer_size: self.buffer_size,
+            period_size: self.period_size,
         };
 
         let (input_pcm, output_pcm, _) = configure_audio_devices(&alsa_settings)?;

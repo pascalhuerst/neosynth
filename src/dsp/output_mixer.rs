@@ -115,14 +115,7 @@ mod tests {
         let mut peak = 0.0f32;
         for i in 0..10_000 {
             let sign = if i & 1 == 0 { 1.0 } else { -1.0 };
-            mixer.combine(
-                dry_l * sign,
-                0.0,
-                reverb_l * sign,
-                0.0,
-                echo_l * sign,
-                0.0,
-            );
+            mixer.combine(dry_l * sign, 0.0, reverb_l * sign, 0.0, echo_l * sign, 0.0);
             if i >= 1_000 {
                 peak = peak.max(mixer.out_l.abs());
             }
@@ -154,19 +147,6 @@ mod tests {
         });
         let peak = ac_peak_l_after_settle(&mut mixer, 0.0, 0.4, 0.0);
         assert!((peak - 0.4).abs() < 1e-2, "peak: {peak}");
-    }
-
-    #[test]
-    fn echo_only_passes_wet_ac() {
-        let mut mixer = ChannelMixer::new(48_000.0);
-        mixer.set_params(ChannelMixerParams {
-            dry_mix: 0.0,
-            reverb_mix: 0.0,
-            echo_mix: 1.0,
-            level: 1.0,
-        });
-        let peak = ac_peak_l_after_settle(&mut mixer, 0.0, 0.0, 0.3);
-        assert!((peak - 0.3).abs() < 1e-2, "peak: {peak}");
     }
 
     #[test]

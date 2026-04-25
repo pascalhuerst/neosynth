@@ -19,6 +19,8 @@ pub struct AlsaSettings {
     pub sample_rate: u32,
     /// Buffer size in frames, used for both capture and playback (default: 512).
     pub buffer_size: Option<u32>,
+    /// Period size in frames; if `None`, uses `buffer_size / TARGET_PERIODS`.
+    pub period_size: Option<u32>,
 }
 
 /// Configure a PCM device with the given buffer size.
@@ -28,6 +30,7 @@ fn configure_pcm(
     num_channels: u32,
     sample_rate: u32,
     buffer_size: i64,
+    period_size: Option<i64>,
 ) -> Result<()> {
     let hwp = HwParams::any(pcm)?;
 
@@ -42,7 +45,7 @@ fn configure_pcm(
 
     hwp.set_buffer_size_near(buffer_size)?;
 
-    let period = (buffer_size / TARGET_PERIODS).max(2);
+    let period = period_size.unwrap_or_else(|| (buffer_size / TARGET_PERIODS).max(2));
     hwp.set_period_size_near(period, alsa::ValueOr::Nearest)?;
 
     pcm.hw_params(&hwp)?;
@@ -72,6 +75,7 @@ pub fn configure_audio_devices(settings: &AlsaSettings) -> Result<(PCM, PCM, usi
         .buffer_size
         .map(|b| b as i64)
         .unwrap_or(DEFAULT_BUFFER);
+    let target_period = settings.period_size.map(|p| p as i64);
 
     tracing::info!("Configuring capture: {}", settings.input_device);
     let capture = PCM::new(&settings.input_device, Direction::Capture, false)?;
@@ -81,6 +85,7 @@ pub fn configure_audio_devices(settings: &AlsaSettings) -> Result<(PCM, PCM, usi
         settings.num_input_channels,
         settings.sample_rate,
         target_buffer,
+        target_period,
     )?;
 
     tracing::info!("Configuring playback: {}", settings.output_device);
@@ -91,6 +96,7 @@ pub fn configure_audio_devices(settings: &AlsaSettings) -> Result<(PCM, PCM, usi
         settings.num_output_channels,
         settings.sample_rate,
         target_buffer,
+        target_period,
     )?;
 
     let cap_buffer = capture.hw_params_current()?.get_buffer_size()?;
