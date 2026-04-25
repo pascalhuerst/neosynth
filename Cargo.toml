@@ -1,0 +1,19 @@
+[package]
+name = "neosynth"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alsa = "0.9"
+anyhow = "1"
+ctrlc = "3"
+libc = "0.2"
+num-traits = "0.2"
+ringbuf = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = true
