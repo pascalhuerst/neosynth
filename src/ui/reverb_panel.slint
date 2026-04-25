@@ -29,8 +29,6 @@ export component ReverbPanel {
     callback hpf-changed(float);
     callback lpf-changed(float);
     callback chorus-changed(float);
-    callback dry-changed(float);
-    callback wet-changed(float);
     callback send-changed(float);
 
     VerticalBox {
@@ -66,14 +64,6 @@ export component ReverbPanel {
         LabeledSlider {
             label: "Chorus"; minimum: 0; maximum: 1; value: 0.5;
             changed(v) => { root.chorus-changed(v); }
-        }
-        LabeledSlider {
-            label: "Dry"; minimum: 0; maximum: 1; value: 1.0;
-            changed(v) => { root.dry-changed(v); }
-        }
-        LabeledSlider {
-            label: "Wet"; minimum: 0; maximum: 1; value: 0.3;
-            changed(v) => { root.wet-changed(v); }
         }
         LabeledSlider {
             label: "Send"; minimum: 0; maximum: 1; value: 1.0;

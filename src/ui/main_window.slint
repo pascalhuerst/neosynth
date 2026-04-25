@@ -1,10 +1,11 @@
 import { Slider, VerticalBox } from "std-widgets.slint";
 import { ReverbPanel } from "reverb_panel.slint";
+import { MixerPanel } from "mixer_panel.slint";
 
 export component MainWindow inherits Window {
     title: "neosynth";
     preferred-width: 480px;
-    preferred-height: 720px;
+    preferred-height: 760px;
 
     callback gain-changed(float);
 
@@ -15,9 +16,11 @@ export component MainWindow inherits Window {
     callback reverb-hpf-changed(float);
     callback reverb-lpf-changed(float);
     callback reverb-chorus-changed(float);
-    callback reverb-dry-changed(float);
-    callback reverb-wet-changed(float);
     callback reverb-send-changed(float);
+
+    callback mixer-dry-changed(float);
+    callback mixer-reverb-changed(float);
+    callback mixer-level-changed(float);
 
     in-out property <float> gain: 1.0;
 
@@ -44,9 +47,12 @@ export component MainWindow inherits Window {
             hpf-changed(v) => { root.reverb-hpf-changed(v); }
             lpf-changed(v) => { root.reverb-lpf-changed(v); }
             chorus-changed(v) => { root.reverb-chorus-changed(v); }
-            dry-changed(v) => { root.reverb-dry-changed(v); }
-            wet-changed(v) => { root.reverb-wet-changed(v); }
             send-changed(v) => { root.reverb-send-changed(v); }
+        }
+        MixerPanel {
+            dry-changed(v) => { root.mixer-dry-changed(v); }
+            reverb-changed(v) => { root.mixer-reverb-changed(v); }
+            level-changed(v) => { root.mixer-level-changed(v); }
         }
     }
 }

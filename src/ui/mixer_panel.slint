@@ -1,0 +1,48 @@
+import { Slider, VerticalBox } from "std-widgets.slint";
+
+component LabeledSlider {
+    in property <string> label;
+    in property <float> minimum: 0.0;
+    in property <float> maximum: 1.0;
+    in-out property <float> value: 0.0;
+    callback changed(float);
+
+    VerticalLayout {
+        spacing: 2px;
+        Text {
+            text: root.label + ": " + root.value;
+        }
+        Slider {
+            minimum: root.minimum;
+            maximum: root.maximum;
+            value <=> root.value;
+            changed(v) => { root.changed(v); }
+        }
+    }
+}
+
+export component MixerPanel {
+    callback dry-changed(float);
+    callback reverb-changed(float);
+    callback level-changed(float);
+
+    VerticalBox {
+        Text {
+            text: "Output Mixer";
+            font-size: 18px;
+            horizontal-alignment: center;
+        }
+        LabeledSlider {
+            label: "Dry"; minimum: 0; maximum: 1; value: 1.0;
+            changed(v) => { root.dry-changed(v); }
+        }
+        LabeledSlider {
+            label: "Reverb"; minimum: 0; maximum: 1; value: 0.3;
+            changed(v) => { root.reverb-changed(v); }
+        }
+        LabeledSlider {
+            label: "Level"; minimum: 0; maximum: 2; value: 1.0;
+            changed(v) => { root.level-changed(v); }
+        }
+    }
+}
