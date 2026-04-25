@@ -4,6 +4,7 @@ use crate::dsp::dsp_toolbox::constants::TWO_PI;
 pub struct ChannelMixerParams {
     pub dry_mix: f32,
     pub reverb_mix: f32,
+    pub echo_mix: f32,
     pub level: f32,
 }
 
@@ -12,6 +13,7 @@ impl Default for ChannelMixerParams {
         Self {
             dry_mix: 1.0,
             reverb_mix: 0.3,
+            echo_mix: 0.0,
             level: 1.0,
         }
     }
@@ -21,6 +23,7 @@ impl Default for ChannelMixerParams {
 pub enum ChannelMixerParam {
     DryMix(f64),
     ReverbMix(f64),
+    EchoMix(f64),
     Level(f64),
 }
 
@@ -60,6 +63,7 @@ impl ChannelMixer {
         match param {
             ChannelMixerParam::DryMix(v) => self.params.dry_mix = v as f32,
             ChannelMixerParam::ReverbMix(v) => self.params.reverb_mix = v as f32,
+            ChannelMixerParam::EchoMix(v) => self.params.echo_mix = v as f32,
             ChannelMixerParam::Level(v) => self.params.level = v as f32,
         }
     }
@@ -72,9 +76,21 @@ impl ChannelMixer {
     }
 
     #[inline]
-    pub fn combine(&mut self, raw_l: f32, raw_r: f32, reverb_wet_l: f32, reverb_wet_r: f32) {
-        let mix_l = raw_l * self.params.dry_mix + reverb_wet_l * self.params.reverb_mix;
-        let mix_r = raw_r * self.params.dry_mix + reverb_wet_r * self.params.reverb_mix;
+    pub fn combine(
+        &mut self,
+        raw_l: f32,
+        raw_r: f32,
+        reverb_wet_l: f32,
+        reverb_wet_r: f32,
+        echo_wet_l: f32,
+        echo_wet_r: f32,
+    ) {
+        let mix_l = raw_l * self.params.dry_mix
+            + reverb_wet_l * self.params.reverb_mix
+            + echo_wet_l * self.params.echo_mix;
+        let mix_r = raw_r * self.params.dry_mix
+            + reverb_wet_r * self.params.reverb_mix
+            + echo_wet_r * self.params.echo_mix;
 
         let hp_l = mix_l - self.hp_state_l;
         self.hp_state_l = hp_l * self.hp_b0 + self.hp_state_l;
@@ -90,11 +106,23 @@ impl ChannelMixer {
 mod tests {
     use super::*;
 
-    fn ac_peak_l_after_settle(mixer: &mut ChannelMixer, dry_l: f32, wet_l: f32) -> f32 {
+    fn ac_peak_l_after_settle(
+        mixer: &mut ChannelMixer,
+        dry_l: f32,
+        reverb_l: f32,
+        echo_l: f32,
+    ) -> f32 {
         let mut peak = 0.0f32;
         for i in 0..10_000 {
             let sign = if i & 1 == 0 { 1.0 } else { -1.0 };
-            mixer.combine(dry_l * sign, 0.0, wet_l * sign, 0.0);
+            mixer.combine(
+                dry_l * sign,
+                0.0,
+                reverb_l * sign,
+                0.0,
+                echo_l * sign,
+                0.0,
+            );
             if i >= 1_000 {
                 peak = peak.max(mixer.out_l.abs());
             }
@@ -108,9 +136,10 @@ mod tests {
         mixer.set_params(ChannelMixerParams {
             dry_mix: 1.0,
             reverb_mix: 0.0,
+            echo_mix: 0.0,
             level: 1.0,
         });
-        let peak = ac_peak_l_after_settle(&mut mixer, 0.5, 0.0);
+        let peak = ac_peak_l_after_settle(&mut mixer, 0.5, 0.0, 0.0);
         assert!((peak - 0.5).abs() < 1e-2, "peak: {peak}");
     }
 
@@ -120,10 +149,24 @@ mod tests {
         mixer.set_params(ChannelMixerParams {
             dry_mix: 0.0,
             reverb_mix: 1.0,
+            echo_mix: 0.0,
             level: 1.0,
         });
-        let peak = ac_peak_l_after_settle(&mut mixer, 0.0, 0.4);
+        let peak = ac_peak_l_after_settle(&mut mixer, 0.0, 0.4, 0.0);
         assert!((peak - 0.4).abs() < 1e-2, "peak: {peak}");
+    }
+
+    #[test]
+    fn echo_only_passes_wet_ac() {
+        let mut mixer = ChannelMixer::new(48_000.0);
+        mixer.set_params(ChannelMixerParams {
+            dry_mix: 0.0,
+            reverb_mix: 0.0,
+            echo_mix: 1.0,
+            level: 1.0,
+        });
+        let peak = ac_peak_l_after_settle(&mut mixer, 0.0, 0.0, 0.3);
+        assert!((peak - 0.3).abs() < 1e-2, "peak: {peak}");
     }
 
     #[test]
@@ -132,9 +175,10 @@ mod tests {
         mixer.set_params(ChannelMixerParams {
             dry_mix: 1.0,
             reverb_mix: 0.0,
+            echo_mix: 0.0,
             level: 0.5,
         });
-        let peak = ac_peak_l_after_settle(&mut mixer, 1.0, 0.0);
+        let peak = ac_peak_l_after_settle(&mut mixer, 1.0, 0.0, 0.0);
         assert!((peak - 0.5).abs() < 1e-2, "peak: {peak}");
     }
 
@@ -144,7 +188,7 @@ mod tests {
         mixer.set_params(ChannelMixerParams::default());
 
         for _ in 0..480_000 {
-            mixer.combine(0.5, 0.5, 0.0, 0.0);
+            mixer.combine(0.5, 0.5, 0.0, 0.0, 0.0, 0.0);
         }
         assert!(
             mixer.out_l.abs() < 1e-3,

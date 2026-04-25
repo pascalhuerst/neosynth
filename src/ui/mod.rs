@@ -1,4 +1,5 @@
 use crate::audio::{InputParameterRingBufferProducer, InputParameters};
+use crate::dsp::echo::EchoParam;
 use crate::dsp::output_mixer::ChannelMixerParam;
 use crate::dsp::reverb::ReverbParam;
 
@@ -35,6 +36,16 @@ pub fn run(producer: InputParameterRingBufferProducer, running: Arc<AtomicBool>)
         }
     };
 
+    let make_echo_handler = |variant: fn(f64) -> EchoParam| {
+        let producer = producer.clone();
+        move |v: f32| {
+            let msg = InputParameters::Echo(variant(v as f64));
+            if producer.borrow_mut().try_push(msg).is_err() {
+                tracing::warn!("Parameter channel full, dropping update");
+            }
+        }
+    };
+
     let make_mixer_handler = |variant: fn(f64) -> ChannelMixerParam| {
         let producer = producer.clone();
         move |v: f32| {
@@ -56,8 +67,16 @@ pub fn run(producer: InputParameterRingBufferProducer, running: Arc<AtomicBool>)
     ui.on_reverb_chorus_changed(make_reverb_handler(ReverbParam::Chorus));
     ui.on_reverb_send_changed(make_reverb_handler(ReverbParam::Send));
 
+    ui.on_echo_send_changed(make_echo_handler(EchoParam::Send));
+    ui.on_echo_fb_local_changed(make_echo_handler(EchoParam::FbLocal));
+    ui.on_echo_fb_cross_changed(make_echo_handler(EchoParam::FbCross));
+    ui.on_echo_time_l_changed(make_echo_handler(EchoParam::TimeLMs));
+    ui.on_echo_time_r_changed(make_echo_handler(EchoParam::TimeRMs));
+    ui.on_echo_lpf_changed(make_echo_handler(EchoParam::LpfHz));
+
     ui.on_mixer_dry_changed(make_mixer_handler(ChannelMixerParam::DryMix));
     ui.on_mixer_reverb_changed(make_mixer_handler(ChannelMixerParam::ReverbMix));
+    ui.on_mixer_echo_changed(make_mixer_handler(ChannelMixerParam::EchoMix));
     ui.on_mixer_level_changed(make_mixer_handler(ChannelMixerParam::Level));
 
     let shutdown_timer = slint::Timer::default();

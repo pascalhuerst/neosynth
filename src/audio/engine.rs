@@ -2,6 +2,7 @@ use super::audio_devices::{AlsaSettings, configure_audio_devices};
 use super::channels::InputParameterRingBufferConsumer;
 use super::parameters::InputParameters;
 use super::realtime::{prioritize_thread, set_thread_affinity};
+use crate::dsp::echo::Echo;
 use crate::dsp::output_mixer::ChannelMixer;
 use crate::dsp::processing::process_linear_gain;
 use crate::dsp::reverb::Reverb;
@@ -95,6 +96,7 @@ fn run_audio_loop(
 
     let mut gain: f32 = 1.0;
     let mut reverb = Reverb::new(sample_rate as f32, 1);
+    let mut echo = Echo::new(sample_rate as f32, 1);
     let mut mixer = ChannelMixer::new(sample_rate as f32);
 
     tracing::info!(
@@ -110,6 +112,7 @@ fn run_audio_loop(
             match update {
                 InputParameters::LinearGain(v) => gain = v as f32,
                 InputParameters::Reverb(p) => reverb.update_param(p),
+                InputParameters::Echo(p) => echo.update_param(p),
                 InputParameters::Mixer(p) => mixer.update_param(p),
             }
         }
@@ -133,7 +136,15 @@ fn run_audio_loop(
             let raw_l = left[i];
             let raw_r = right[i];
             reverb.apply(raw_l, raw_r);
-            mixer.combine(raw_l, raw_r, reverb.out_l, reverb.out_r);
+            echo.apply(raw_l, raw_r);
+            mixer.combine(
+                raw_l,
+                raw_r,
+                reverb.out_l,
+                reverb.out_r,
+                echo.out_l,
+                echo.out_r,
+            );
             left[i] = mixer.out_l;
             right[i] = mixer.out_r;
         }
