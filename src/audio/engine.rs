@@ -1,7 +1,10 @@
 use super::audio_devices::{AlsaSettings, configure_audio_devices};
+use super::channels::InputParameterRingBufferConsumer;
+use super::parameters::InputParameters;
 use super::realtime::{prioritize_thread, set_thread_affinity};
 
 use anyhow::Result;
+use ringbuf::traits::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
@@ -36,9 +39,9 @@ impl Engine {
     pub fn run(
         &self,
         running: Arc<AtomicBool>,
-        capture_cpu: usize,
-        playback_cpu: usize,
-    ) -> Result<(JoinHandle<()>, JoinHandle<()>)> {
+        params: InputParameterRingBufferConsumer,
+        audio_cpu: usize,
+    ) -> Result<JoinHandle<()>> {
         let alsa_settings = AlsaSettings {
             input_device: self.input_device.clone(),
             output_device: self.output_device.clone(),
@@ -53,71 +56,70 @@ impl Engine {
         let (input_pcm, output_pcm, _) = configure_audio_devices(&alsa_settings)?;
 
         let capture_period = input_pcm.hw_params_current()?.get_period_size()? as usize;
-        let playback_period = output_pcm.hw_params_current()?.get_period_size()? as usize;
 
         input_pcm.prepare()?;
         output_pcm.prepare()?;
         input_pcm.start()?;
 
-        let cap_running = running.clone();
-        let capture_handle = std::thread::spawn(move || {
-            set_thread_affinity(capture_cpu);
+        let handle = std::thread::spawn(move || {
+            set_thread_affinity(audio_cpu);
             prioritize_thread();
-            if let Err(e) = run_capture_loop(input_pcm, capture_period, &cap_running) {
-                tracing::error!("Capture thread error: {}", e);
+            if let Err(e) = run_audio_loop(input_pcm, output_pcm, capture_period, params, &running)
+            {
+                tracing::error!("Audio thread error: {}", e);
             }
-            tracing::info!("Capture thread stopped");
+            tracing::info!("Audio thread stopped");
         });
 
-        let pb_running = running;
-        let playback_handle = std::thread::spawn(move || {
-            set_thread_affinity(playback_cpu);
-            prioritize_thread();
-            if let Err(e) = run_playback_loop(output_pcm, playback_period, &pb_running) {
-                tracing::error!("Playback thread error: {}", e);
-            }
-            tracing::info!("Playback thread stopped");
-        });
-
-        Ok((capture_handle, playback_handle))
+        Ok(handle)
     }
 }
 
-fn run_capture_loop(
+fn run_audio_loop(
     input_pcm: alsa::PCM,
+    output_pcm: alsa::PCM,
     period_size: usize,
+    mut params: InputParameterRingBufferConsumer,
     running: &AtomicBool,
 ) -> Result<()> {
-    let mut capture_buf = vec![0i16; period_size * 2];
+    let mut buf = vec![0i16; period_size * 2];
+    let mut gain: f32 = 1.0;
 
-    tracing::info!("Capture loop started, period_size={}", period_size);
+    tracing::info!(
+        "Audio loop started, period_size={}, gain={}",
+        period_size,
+        gain
+    );
 
     while running.load(Ordering::Relaxed) {
-        match input_pcm.io_i16()?.readi(&mut capture_buf) {
+        while let Some(update) = params.try_pop() {
+            match update {
+                InputParameters::LinearGain(g) => {
+                    gain = g as f32;
+                    tracing::info!("Linear gain set to {}", gain);
+                }
+            }
+        }
+
+        match input_pcm.io_i16()?.readi(&mut buf) {
             Ok(_) => {}
             Err(e) if e.errno() == libc::EPIPE => {
                 tracing::warn!("Capture overrun, recovering");
                 input_pcm.prepare()?;
                 input_pcm.start()?;
+                continue;
             }
             Err(e) => return Err(e.into()),
         }
-    }
 
-    Ok(())
-}
+        if gain != 1.0 {
+            for s in buf.iter_mut() {
+                let v = (*s as f32 * gain).clamp(i16::MIN as f32, i16::MAX as f32);
+                *s = v as i16;
+            }
+        }
 
-fn run_playback_loop(
-    output_pcm: alsa::PCM,
-    period_size: usize,
-    running: &AtomicBool,
-) -> Result<()> {
-    let playback_buf = vec![0i16; period_size * 2];
-
-    tracing::info!("Playback loop started, period_size={}", period_size);
-
-    while running.load(Ordering::Relaxed) {
-        match output_pcm.io_i16()?.writei(&playback_buf) {
+        match output_pcm.io_i16()?.writei(&buf) {
             Ok(_) => {}
             Err(e) if e.errno() == libc::EPIPE => {
                 tracing::warn!("Playback underrun, recovering");

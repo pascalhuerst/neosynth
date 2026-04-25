@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 const SAMPLE_RATE: u32 = 48_000;
-const CAPTURE_CPU: usize = 2;
-const PLAYBACK_CPU: usize = 3;
+const AUDIO_CPU: usize = 2;
+const PARAM_CHANNEL_CAPACITY: usize = 64;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -17,7 +17,6 @@ fn main() -> Result<()> {
         .init();
 
     let running = Arc::new(AtomicBool::new(true));
-
     {
         let running = running.clone();
         ctrlc::set_handler(move || {
@@ -26,16 +25,15 @@ fn main() -> Result<()> {
         })?;
     }
 
+    let params = audio::create_parameter_channel(PARAM_CHANNEL_CAPACITY);
+    let _param_producer = params.producer;
+
     let engine = audio::Engine::new("default".to_string(), "default".to_string(), SAMPLE_RATE);
+    let handle = engine.run(running, params.consumer, AUDIO_CPU)?;
 
-    let (capture_handle, playback_handle) = engine.run(running, CAPTURE_CPU, PLAYBACK_CPU)?;
-
-    capture_handle
+    handle
         .join()
-        .map_err(|_| anyhow::anyhow!("capture thread panicked"))?;
-    playback_handle
-        .join()
-        .map_err(|_| anyhow::anyhow!("playback thread panicked"))?;
+        .map_err(|_| anyhow::anyhow!("audio thread panicked"))?;
 
     tracing::info!("Shutdown complete");
     Ok(())

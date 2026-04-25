@@ -1,5 +1,6 @@
 use super::buffer::GenericAudioBuffer;
-use ringbuf::{traits::*, StaticRb};
+use super::parameters::InputParameters;
+use ringbuf::{HeapRb, StaticRb, traits::*};
 
 pub const MAX_AUDIO_BUFFERS: usize = 4;
 pub const CHANNELS: usize = 8;
@@ -39,4 +40,21 @@ pub fn create_audio_channels() -> (InputChannel, OutputChannel) {
             output_producer,
         },
     )
+}
+
+pub type InputParameterRingBuffer = HeapRb<InputParameters>;
+pub type InputParameterRingBufferConsumer =
+    ringbuf::wrap::caching::Caching<std::sync::Arc<InputParameterRingBuffer>, false, true>;
+pub type InputParameterRingBufferProducer =
+    ringbuf::wrap::caching::Caching<std::sync::Arc<InputParameterRingBuffer>, true, false>;
+
+pub struct ParameterChannel {
+    pub producer: InputParameterRingBufferProducer,
+    pub consumer: InputParameterRingBufferConsumer,
+}
+
+pub fn create_parameter_channel(capacity: usize) -> ParameterChannel {
+    let rb = InputParameterRingBuffer::new(capacity);
+    let (producer, consumer) = rb.split();
+    ParameterChannel { producer, consumer }
 }
