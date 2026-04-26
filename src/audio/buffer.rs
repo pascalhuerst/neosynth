@@ -104,6 +104,15 @@ pub fn get_abs_peak(buffer: &[f32]) -> f32 {
 }
 
 #[inline(always)]
+pub fn get_rms(buffer: &[f32]) -> f32 {
+    if buffer.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f32 = buffer.iter().map(|&x| x * x).sum();
+    (sum_sq / buffer.len() as f32).sqrt()
+}
+
+#[inline(always)]
 pub fn zero_slice(buffer: &mut [f32]) {
     for sample in buffer.iter_mut() {
         *sample = 0.;

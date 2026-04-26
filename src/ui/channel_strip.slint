@@ -1,0 +1,309 @@
+import { Slider, CheckBox, VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+
+// Both `peak` and `rms` are pre-converted "meter positions" in [0, 1]
+// where 0.0 = bottom (-60 dB) and 1.0 = top (0 dBFS). The Rust UI tick does
+// the linear → dB → position mapping so this component stays simple.
+component MeterBar inherits Rectangle {
+    in property <float> peak: 0.0;
+    in property <float> rms: 0.0;
+    width: 8px;
+    background: #111;
+    border-color: #333;
+    border-width: 1px;
+
+    // Tick marks at -6 / -12 / -24 / -48 dB (visible behind the gradient fill).
+    Rectangle { x: 0; width: parent.width; height: 1px; y: parent.height * 0.10; background: #4a4a52; }
+    Rectangle { x: 0; width: parent.width; height: 1px; y: parent.height * 0.20; background: #4a4a52; }
+    Rectangle { x: 0; width: parent.width; height: 1px; y: parent.height * 0.40; background: #4a4a52; }
+    Rectangle { x: 0; width: parent.width; height: 1px; y: parent.height * 0.80; background: #4a4a52; }
+
+    // RMS as gradient fill from the bottom. Yellow ≈ -12 dB, red ≈ 0 dBFS.
+    Rectangle {
+        x: 1px;
+        width: parent.width - 2px;
+        y: parent.height - self.height - 1px;
+        height: (parent.height - 2px) * clamp(root.rms, 0.0, 1.0);
+        background: @linear-gradient(0deg, #2ecc71 0%, #2ecc71 60%, #f1c40f 80%, #e74c3c 95%);
+    }
+
+    // Peak hold line (1.5s hold + decay handled in Rust).
+    Rectangle {
+        x: 0;
+        width: parent.width;
+        height: 2px;
+        y: (parent.height - 2px) * (1 - clamp(root.peak, 0.0, 1.0));
+        background: #ffffff;
+        opacity: root.peak > 0.001 ? 1.0 : 0.0;
+    }
+}
+
+// Static dB scale to place next to a meter. Labels at the same fractional
+// positions as MeterBar's tick marks.
+component DbScale {
+    width: 24px;
+
+    Text { x: 0; y: -2px;                  text: "0";   font-size: 8px; color: #8a8a90; }
+    Text { x: 0; y: parent.height * 0.10 - 4px; text: "-6";  font-size: 8px; color: #8a8a90; }
+    Text { x: 0; y: parent.height * 0.20 - 4px; text: "-12"; font-size: 8px; color: #8a8a90; }
+    Text { x: 0; y: parent.height * 0.40 - 4px; text: "-24"; font-size: 8px; color: #8a8a90; }
+    Text { x: 0; y: parent.height * 0.80 - 4px; text: "-48"; font-size: 8px; color: #8a8a90; }
+}
+
+component VerticalFader {
+    in property <float> minimum: -60;
+    in property <float> maximum: 12;
+    in-out property <float> value: 0;
+    callback changed(float);
+
+    width: 28px;
+    min-height: 100px;
+
+    Rectangle {
+        x: (parent.width - 4px) / 2;
+        width: 4px;
+        height: parent.height;
+        background: #333;
+        border-radius: 2px;
+    }
+
+    property <float> normalized: (root.value - root.minimum) / (root.maximum - root.minimum);
+
+    Rectangle {
+        x: (parent.width - 18px) / 2;
+        width: 18px;
+        height: 14px;
+        y: clamp(parent.height - self.height, 0px, parent.height - self.height)
+           * (1 - clamp(root.normalized, 0, 1));
+        background: #c8c8d0;
+        border-color: #2b2b30;
+        border-width: 1px;
+        border-radius: 3px;
+    }
+
+    touch := TouchArea {
+        property <float> drag-frac: 1 - clamp(self.mouse-y / parent.height, 0, 1);
+
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down || self.pressed) {
+                root.value = root.minimum + self.drag-frac * (root.maximum - root.minimum);
+                root.changed(root.value);
+            }
+        }
+
+        moved => {
+            if (self.pressed) {
+                root.value = root.minimum + self.drag-frac * (root.maximum - root.minimum);
+                root.changed(root.value);
+            }
+        }
+    }
+}
+
+export component InputChannelStrip inherits Rectangle {
+    in property <int> index;
+    in property <string> label;
+    in-out property <float> meter_peak: 0.0;
+    in-out property <float> meter_rms: 0.0;
+
+    callback gain-changed(int, float);
+    callback pan-changed(int, float);
+    callback mute-changed(int, bool);
+    callback send-reverb-changed(int, float);
+    callback send-echo-changed(int, float);
+    callback send-pre-fader-changed(int, bool);
+
+    width: 96px;
+    background: #1c1c1f;
+    border-color: #2b2b30;
+    border-width: 1px;
+    border-radius: 4px;
+
+    VerticalBox {
+        spacing: 6px;
+        padding: 6px;
+
+        Text {
+            text: root.label;
+            font-size: 13px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            color: #d8d8dc;
+        }
+
+        Rectangle { height: 1px; background: #2b2b30; }
+
+        Text { text: "Send Reverb"; font-size: 9px; color: #8a8a90; }
+        Slider {
+            minimum: 0; maximum: 1; value: 0;
+            changed(v) => { root.send-reverb-changed(root.index, v); }
+        }
+
+        Text { text: "Send Echo"; font-size: 9px; color: #8a8a90; }
+        Slider {
+            minimum: 0; maximum: 1; value: 0;
+            changed(v) => { root.send-echo-changed(root.index, v); }
+        }
+
+        CheckBox {
+            text: "Pre";
+            toggled => { root.send-pre-fader-changed(root.index, self.checked); }
+        }
+
+        Rectangle { height: 1px; background: #2b2b30; }
+
+        Text { text: "Pan"; font-size: 9px; color: #8a8a90; }
+        Slider {
+            minimum: -1; maximum: 1; value: 0;
+            changed(v) => { root.pan-changed(root.index, v); }
+        }
+
+        Rectangle { height: 1px; background: #2b2b30; }
+
+        Rectangle {
+            min-height: 220px;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 4px;
+                VerticalFader {
+                    minimum: -60; maximum: 12; value: 0;
+                    changed(v) => { root.gain-changed(root.index, v); }
+                }
+                MeterBar { peak: root.meter_peak; rms: root.meter_rms; }
+            }
+        }
+
+        Text {
+            text: "Gain (dB)";
+            font-size: 9px;
+            color: #8a8a90;
+            horizontal-alignment: center;
+        }
+
+        CheckBox {
+            text: "Mute";
+            toggled => { root.mute-changed(root.index, self.checked); }
+        }
+    }
+}
+
+export component FxReturnStrip inherits Rectangle {
+    in property <string> label;
+    in-out property <float> meter_peak: 0.0;
+    in-out property <float> meter_rms: 0.0;
+
+    callback gain-changed(float);
+    callback pan-changed(float);
+    callback mute-changed(bool);
+    callback edit-clicked();
+
+    width: 96px;
+    background: #1f1c22;
+    border-color: #36303a;
+    border-width: 1px;
+    border-radius: 4px;
+
+    VerticalBox {
+        spacing: 6px;
+        padding: 6px;
+
+        Text {
+            text: root.label;
+            font-size: 13px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            color: #d8c8dc;
+        }
+
+        Button {
+            text: "Edit";
+            clicked => { root.edit-clicked(); }
+        }
+
+        Rectangle { height: 1px; background: #36303a; }
+
+        Text { text: "Pan"; font-size: 9px; color: #8a8a90; }
+        Slider {
+            minimum: -1; maximum: 1; value: 0;
+            changed(v) => { root.pan-changed(v); }
+        }
+
+        Rectangle { height: 1px; background: #36303a; }
+
+        Rectangle {
+            min-height: 220px;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 4px;
+                VerticalFader {
+                    minimum: -60; maximum: 12; value: 0;
+                    changed(v) => { root.gain-changed(v); }
+                }
+                MeterBar { peak: root.meter_peak; rms: root.meter_rms; }
+            }
+        }
+
+        Text {
+            text: "Gain (dB)";
+            font-size: 9px;
+            color: #8a8a90;
+            horizontal-alignment: center;
+        }
+
+        CheckBox {
+            text: "Mute";
+            toggled => { root.mute-changed(self.checked); }
+        }
+    }
+}
+
+export component MasterStrip inherits Rectangle {
+    in-out property <float> meter_peak_l: 0.0;
+    in-out property <float> meter_peak_r: 0.0;
+    in-out property <float> meter_rms_l: 0.0;
+    in-out property <float> meter_rms_r: 0.0;
+
+    callback gain-changed(float);
+
+    width: 140px;
+    background: #1a1f1a;
+    border-color: #2f3a2f;
+    border-width: 1px;
+    border-radius: 4px;
+
+    VerticalBox {
+        spacing: 6px;
+        padding: 6px;
+
+        Text {
+            text: "Master";
+            font-size: 13px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            color: #c8d8c8;
+        }
+
+        Rectangle { height: 1px; background: #2f3a2f; }
+
+        Rectangle {
+            min-height: 280px;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 4px;
+                VerticalFader {
+                    minimum: -60; maximum: 12; value: 0;
+                    changed(v) => { root.gain-changed(v); }
+                }
+                MeterBar { peak: root.meter_peak_l; rms: root.meter_rms_l; }
+                MeterBar { peak: root.meter_peak_r; rms: root.meter_rms_r; }
+                DbScale { }
+            }
+        }
+
+        Text {
+            text: "Gain (dB)";
+            font-size: 9px;
+            color: #8a8a90;
+            horizontal-alignment: center;
+        }
+    }
+}

@@ -2,6 +2,7 @@ mod audio_devices;
 mod buffer;
 mod channels;
 mod engine;
+mod meters;
 mod parameters;
 pub mod realtime;
 
@@ -14,6 +15,7 @@ pub use channels::{
     create_parameter_channel,
 };
 pub use engine::*;
+pub use meters::MetersOutput;
 pub use parameters::*;
 pub use realtime::*;
 

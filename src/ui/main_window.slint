@@ -1,15 +1,27 @@
-import { Slider, VerticalBox, ScrollView } from "std-widgets.slint";
+import { ScrollView, VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
 import { ReverbPanel } from "reverb_panel.slint";
 import { EchoPanel } from "echo_panel.slint";
-import { MixerPanel } from "mixer_panel.slint";
+import { InputChannelStrip, FxReturnStrip, MasterStrip } from "channel_strip.slint";
 
 export component MainWindow inherits Window {
     title: "neosynth";
-    preferred-width: 480px;
-    preferred-height: 900px;
+    preferred-width: 1100px;
+    preferred-height: 700px;
+    background: #16161a;
 
-    callback gain-changed(float);
+    in-out property <[string]> input-labels: [];
+    in-out property <[float]> input-peaks: [];
+    in-out property <[float]> input-rms: [];
+    in-out property <float> reverb-peak: 0;
+    in-out property <float> reverb-rms: 0;
+    in-out property <float> echo-peak: 0;
+    in-out property <float> echo-rms: 0;
+    in-out property <float> master-peak-l: 0;
+    in-out property <float> master-rms-l: 0;
+    in-out property <float> master-peak-r: 0;
+    in-out property <float> master-rms-r: 0;
 
+    // Reverb param edit
     callback reverb-size-changed(float);
     callback reverb-feedback-changed(float);
     callback reverb-balance-changed(float);
@@ -19,6 +31,7 @@ export component MainWindow inherits Window {
     callback reverb-chorus-changed(float);
     callback reverb-send-changed(float);
 
+    // Echo param edit
     callback echo-send-changed(float);
     callback echo-fb-local-changed(float);
     callback echo-fb-cross-changed(float);
@@ -26,52 +39,173 @@ export component MainWindow inherits Window {
     callback echo-time-r-changed(float);
     callback echo-lpf-changed(float);
 
-    callback mixer-dry-changed(float);
-    callback mixer-reverb-changed(float);
-    callback mixer-echo-changed(float);
-    callback mixer-level-changed(float);
+    // Mixer — input strips
+    callback input-gain-changed(int, float);
+    callback input-pan-changed(int, float);
+    callback input-mute-changed(int, bool);
+    callback input-send-reverb-changed(int, float);
+    callback input-send-echo-changed(int, float);
+    callback input-send-pre-fader-changed(int, bool);
 
-    in-out property <float> gain: 1.0;
+    // Mixer — FX returns
+    callback reverb-return-gain-changed(float);
+    callback reverb-return-pan-changed(float);
+    callback reverb-return-mute-changed(bool);
+    callback echo-return-gain-changed(float);
+    callback echo-return-pan-changed(float);
+    callback echo-return-mute-changed(bool);
 
-    ScrollView {
-        VerticalBox {
-            Text {
-                text: "Linear gain: " + root.gain;
-                horizontal-alignment: center;
-                font-size: 16px;
-            }
-            Slider {
-                minimum: 0.0;
-                maximum: 2.0;
-                value: root.gain;
-                changed(v) => {
-                    root.gain = v;
-                    root.gain-changed(v);
+    // Mixer — master
+    callback master-gain-changed(float);
+
+    Rectangle {
+        background: #101012;
+        border-radius: 6px;
+        ScrollView {
+            HorizontalBox {
+                spacing: 6px;
+                padding: 8px;
+                alignment: start;
+
+                for label[i] in root.input-labels: InputChannelStrip {
+                    index: i;
+                    label: label;
+                    meter_peak: i < root.input-peaks.length ? root.input-peaks[i] : 0;
+                    meter_rms: i < root.input-rms.length ? root.input-rms[i] : 0;
+                    gain-changed(idx, v) => { root.input-gain-changed(idx, v); }
+                    pan-changed(idx, v) => { root.input-pan-changed(idx, v); }
+                    mute-changed(idx, v) => { root.input-mute-changed(idx, v); }
+                    send-reverb-changed(idx, v) => { root.input-send-reverb-changed(idx, v); }
+                    send-echo-changed(idx, v) => { root.input-send-echo-changed(idx, v); }
+                    send-pre-fader-changed(idx, v) => { root.input-send-pre-fader-changed(idx, v); }
+                }
+
+                Rectangle { width: 12px; }
+
+                FxReturnStrip {
+                    label: "Reverb";
+                    meter_peak: root.reverb-peak;
+                    meter_rms: root.reverb-rms;
+                    gain-changed(v) => { root.reverb-return-gain-changed(v); }
+                    pan-changed(v) => { root.reverb-return-pan-changed(v); }
+                    mute-changed(v) => { root.reverb-return-mute-changed(v); }
+                    edit-clicked => { reverb-popup.show(); }
+                }
+                FxReturnStrip {
+                    label: "Echo";
+                    meter_peak: root.echo-peak;
+                    meter_rms: root.echo-rms;
+                    gain-changed(v) => { root.echo-return-gain-changed(v); }
+                    pan-changed(v) => { root.echo-return-pan-changed(v); }
+                    mute-changed(v) => { root.echo-return-mute-changed(v); }
+                    edit-clicked => { echo-popup.show(); }
+                }
+
+                Rectangle { width: 12px; }
+
+                MasterStrip {
+                    meter_peak_l: root.master-peak-l;
+                    meter_rms_l: root.master-rms-l;
+                    meter_peak_r: root.master-peak-r;
+                    meter_rms_r: root.master-rms-r;
+                    gain-changed(v) => { root.master-gain-changed(v); }
                 }
             }
-            ReverbPanel {
-                size-changed(v) => { root.reverb-size-changed(v); }
-                feedback-changed(v) => { root.reverb-feedback-changed(v); }
-                balance-changed(v) => { root.reverb-balance-changed(v); }
-                pre-delay-changed(v) => { root.reverb-pre-delay-changed(v); }
-                hpf-changed(v) => { root.reverb-hpf-changed(v); }
-                lpf-changed(v) => { root.reverb-lpf-changed(v); }
-                chorus-changed(v) => { root.reverb-chorus-changed(v); }
-                send-changed(v) => { root.reverb-send-changed(v); }
+        }
+    }
+
+    reverb-popup := PopupWindow {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: 460px;
+        height: 540px;
+        close-policy: no-auto-close;
+
+        Rectangle {
+            background: #16161a;
+            border-color: #2b2b30;
+            border-width: 1px;
+            border-radius: 6px;
+
+            VerticalBox {
+                padding: 12px;
+                spacing: 8px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: "Reverb";
+                        font-size: 18px;
+                        font-weight: 700;
+                        color: #d8d8dc;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    Button {
+                        text: "Close";
+                        clicked => { reverb-popup.close(); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: #2b2b30; }
+
+                ReverbPanel {
+                    size-changed(v) => { root.reverb-size-changed(v); }
+                    feedback-changed(v) => { root.reverb-feedback-changed(v); }
+                    balance-changed(v) => { root.reverb-balance-changed(v); }
+                    pre-delay-changed(v) => { root.reverb-pre-delay-changed(v); }
+                    hpf-changed(v) => { root.reverb-hpf-changed(v); }
+                    lpf-changed(v) => { root.reverb-lpf-changed(v); }
+                    chorus-changed(v) => { root.reverb-chorus-changed(v); }
+                    send-changed(v) => { root.reverb-send-changed(v); }
+                }
             }
-            EchoPanel {
-                send-changed(v) => { root.echo-send-changed(v); }
-                fb-local-changed(v) => { root.echo-fb-local-changed(v); }
-                fb-cross-changed(v) => { root.echo-fb-cross-changed(v); }
-                time-l-changed(v) => { root.echo-time-l-changed(v); }
-                time-r-changed(v) => { root.echo-time-r-changed(v); }
-                lpf-changed(v) => { root.echo-lpf-changed(v); }
-            }
-            MixerPanel {
-                dry-changed(v) => { root.mixer-dry-changed(v); }
-                reverb-changed(v) => { root.mixer-reverb-changed(v); }
-                echo-changed(v) => { root.mixer-echo-changed(v); }
-                level-changed(v) => { root.mixer-level-changed(v); }
+        }
+    }
+
+    echo-popup := PopupWindow {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: 460px;
+        height: 480px;
+        close-policy: no-auto-close;
+
+        Rectangle {
+            background: #16161a;
+            border-color: #2b2b30;
+            border-width: 1px;
+            border-radius: 6px;
+
+            VerticalBox {
+                padding: 12px;
+                spacing: 8px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: "Echo";
+                        font-size: 18px;
+                        font-weight: 700;
+                        color: #d8d8dc;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    Button {
+                        text: "Close";
+                        clicked => { echo-popup.close(); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: #2b2b30; }
+
+                EchoPanel {
+                    send-changed(v) => { root.echo-send-changed(v); }
+                    fb-local-changed(v) => { root.echo-fb-local-changed(v); }
+                    fb-cross-changed(v) => { root.echo-fb-cross-changed(v); }
+                    time-l-changed(v) => { root.echo-time-l-changed(v); }
+                    time-r-changed(v) => { root.echo-time-r-changed(v); }
+                    lpf-changed(v) => { root.echo-lpf-changed(v); }
+                }
             }
         }
     }

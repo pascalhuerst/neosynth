@@ -36,6 +36,10 @@ struct Cli {
     /// CPU core to pin the audio thread to (SCHED_FIFO + affinity)
     #[arg(long, default_value_t = 2)]
     audio_cpu: usize,
+
+    /// Number of input channels to capture (one mixer strip per channel)
+    #[arg(long, default_value_t = 2)]
+    input_channels: u32,
 }
 
 fn main() -> Result<()> {
@@ -49,10 +53,11 @@ fn main() -> Result<()> {
         .init();
 
     tracing::info!(
-        "Starting: input={}, output={}, sample_rate={}, buffer_size={:?}, period_size={:?}, audio_cpu={}",
+        "Starting: input={}, output={}, sample_rate={}, in_ch={}, buffer_size={:?}, period_size={:?}, audio_cpu={}",
         cli.input_device,
         cli.output_device,
         cli.sample_rate,
+        cli.input_channels,
         cli.buffer_size,
         cli.period_size,
         cli.audio_cpu,
@@ -68,6 +73,7 @@ fn main() -> Result<()> {
     }
 
     let params = audio::create_parameter_channel(PARAM_CHANNEL_CAPACITY);
+    let meters = Arc::new(audio::MetersOutput::new(cli.input_channels as usize));
 
     let mut engine = audio::Engine::new(cli.input_device, cli.output_device, cli.sample_rate);
     if let Some(buf) = cli.buffer_size {
@@ -76,10 +82,21 @@ fn main() -> Result<()> {
     if let Some(period) = cli.period_size {
         engine.set_period_size(period);
     }
+    engine.set_input_channels(cli.input_channels);
 
-    let audio_handle = engine.run(running.clone(), params.consumer, cli.audio_cpu)?;
+    let audio_handle = engine.run(
+        running.clone(),
+        params.consumer,
+        meters.clone(),
+        cli.audio_cpu,
+    )?;
 
-    ui::run(params.producer, running.clone())?;
+    ui::run(
+        params.producer,
+        running.clone(),
+        cli.input_channels as usize,
+        meters,
+    )?;
 
     audio_handle
         .join()

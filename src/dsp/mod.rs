@@ -1,6 +1,6 @@
 pub mod dsp_toolbox;
 pub mod echo;
-pub mod output_mixer;
+pub mod mixer;
 pub mod processing;
 pub mod reverb;
 pub mod utils;

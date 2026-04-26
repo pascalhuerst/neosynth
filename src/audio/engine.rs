@@ -1,10 +1,10 @@
 use super::audio_devices::{AlsaSettings, configure_audio_devices};
 use super::channels::InputParameterRingBufferConsumer;
+use super::meters::MetersOutput;
 use super::parameters::InputParameters;
 use super::realtime::{prioritize_thread, set_thread_affinity};
 use crate::dsp::echo::Echo;
-use crate::dsp::output_mixer::ChannelMixer;
-use crate::dsp::processing::process_linear_gain;
+use crate::dsp::mixer::Mixer;
 use crate::dsp::reverb::Reverb;
 use crate::dsp::utils::{deinterleave_and_convert_to_float, interleave_and_convert_to_i32};
 
@@ -14,7 +14,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 
-const NUM_CHANNELS: usize = 2;
+const NUM_OUTPUT_CHANNELS: usize = 2;
+const DEFAULT_INPUT_CHANNELS: u32 = 2;
 
 pub struct Engine {
     input_device: String,
@@ -22,6 +23,7 @@ pub struct Engine {
     sample_rate: u32,
     buffer_size: Option<u32>,
     period_size: Option<u32>,
+    num_input_channels: u32,
 }
 
 impl Engine {
@@ -32,6 +34,7 @@ impl Engine {
             sample_rate,
             buffer_size: None,
             period_size: None,
+            num_input_channels: DEFAULT_INPUT_CHANNELS,
         }
     }
 
@@ -43,17 +46,22 @@ impl Engine {
         self.period_size = Some(size);
     }
 
+    pub fn set_input_channels(&mut self, n: u32) {
+        self.num_input_channels = n;
+    }
+
     pub fn run(
         &self,
         running: Arc<AtomicBool>,
         params: InputParameterRingBufferConsumer,
+        meters: Arc<MetersOutput>,
         audio_cpu: usize,
     ) -> Result<JoinHandle<()>> {
         let alsa_settings = AlsaSettings {
             input_device: self.input_device.clone(),
             output_device: self.output_device.clone(),
-            num_input_channels: NUM_CHANNELS as u32,
-            num_output_channels: NUM_CHANNELS as u32,
+            num_input_channels: self.num_input_channels,
+            num_output_channels: NUM_OUTPUT_CHANNELS as u32,
             sample_rate: self.sample_rate,
             buffer_size: self.buffer_size,
             period_size: self.period_size,
@@ -68,6 +76,7 @@ impl Engine {
         input_pcm.start()?;
 
         let sample_rate = self.sample_rate;
+        let num_input_channels = self.num_input_channels as usize;
         let handle = std::thread::spawn(move || {
             set_thread_affinity(audio_cpu);
             prioritize_thread();
@@ -76,7 +85,9 @@ impl Engine {
                 output_pcm,
                 capture_period,
                 sample_rate,
+                num_input_channels,
                 params,
+                meters,
                 &running,
             ) {
                 tracing::error!("Audio thread error: {}", e);
@@ -93,31 +104,35 @@ fn run_audio_loop(
     output_pcm: alsa::PCM,
     period_size: usize,
     sample_rate: u32,
+    num_input_channels: usize,
     mut params: InputParameterRingBufferConsumer,
+    meters: Arc<MetersOutput>,
     running: &AtomicBool,
 ) -> Result<()> {
-    let total_samples = period_size * NUM_CHANNELS;
-    let mut input_i32 = vec![0i32; total_samples];
-    let mut float_buf = vec![0.0f32; total_samples];
-    let mut output_i32 = vec![0i32; total_samples];
+    let input_total = period_size * num_input_channels;
+    let output_total = period_size * NUM_OUTPUT_CHANNELS;
 
-    let mut gain: f32 = 1.0;
+    let mut input_i32 = vec![0i32; input_total];
+    let mut input_float = vec![0.0f32; input_total];
+    let mut output_float = vec![0.0f32; output_total];
+    let mut output_i32 = vec![0i32; output_total];
+    let mut frame: Vec<f32> = vec![0.0; num_input_channels];
+
     let mut reverb = Reverb::new(sample_rate as f32, 1);
     let mut echo = Echo::new(sample_rate as f32, 1);
-    let mut mixer = ChannelMixer::new(sample_rate as f32);
+    let mut mixer = Mixer::new(sample_rate as f32, num_input_channels);
 
     tracing::info!(
-        "Audio loop started, period_size={}, channels={}, sample_rate={}, gain={}",
+        "Audio loop started, period_size={}, in_ch={}, out_ch={}, sample_rate={}",
         period_size,
-        NUM_CHANNELS,
+        num_input_channels,
+        NUM_OUTPUT_CHANNELS,
         sample_rate,
-        gain
     );
 
     while running.load(Ordering::Relaxed) {
         while let Some(update) = params.try_pop() {
             match update {
-                InputParameters::LinearGain(v) => gain = v as f32,
                 InputParameters::Reverb(p) => reverb.update_param(p),
                 InputParameters::Echo(p) => echo.update_param(p),
                 InputParameters::Mixer(p) => mixer.update_param(p),
@@ -135,30 +150,43 @@ fn run_audio_loop(
             Err(e) => return Err(e.into()),
         }
 
-        deinterleave_and_convert_to_float(&input_i32, &mut float_buf, NUM_CHANNELS);
+        deinterleave_and_convert_to_float(&input_i32, &mut input_float, num_input_channels);
 
-        let buffer_size = float_buf.len() / NUM_CHANNELS;
-        let (left, right) = float_buf.split_at_mut(buffer_size);
-        for i in 0..buffer_size {
-            let raw_l = left[i];
-            let raw_r = right[i];
-            reverb.apply(raw_l, raw_r);
-            echo.apply(raw_l, raw_r);
-            mixer.combine(
-                raw_l,
-                raw_r,
-                reverb.out_l,
-                reverb.out_r,
-                echo.out_l,
-                echo.out_r,
-            );
-            left[i] = mixer.out_l;
-            right[i] = mixer.out_r;
+        mixer.reset_levels();
+
+        for i in 0..period_size {
+            for ch in 0..num_input_channels {
+                frame[ch] = input_float[ch * period_size + i];
+            }
+
+            mixer.process_inputs(&frame);
+            reverb.apply(mixer.reverb_bus_l, mixer.reverb_bus_r);
+            echo.apply(mixer.echo_bus_l, mixer.echo_bus_r);
+            mixer.add_returns(reverb.out_l, reverb.out_r, echo.out_l, echo.out_r);
+            mixer.finalize();
+
+            output_float[i] = mixer.master_l;
+            output_float[period_size + i] = mixer.master_r;
         }
 
-        process_linear_gain(&mut float_buf, gain);
+        // Publish peak + RMS levels (lock-free, latest-value-wins).
+        let l = mixer.levels();
+        let n = period_size as f32;
+        let two_n = 2.0 * n;
+        for (idx, (&peak, &sum_sq)) in l.input_peaks.iter().zip(l.input_sum_sq.iter()).enumerate()
+        {
+            meters.store_input(idx, peak, (sum_sq / n).sqrt());
+        }
+        meters.store_reverb(l.reverb_peak, (l.reverb_sum_sq / two_n).sqrt());
+        meters.store_echo(l.echo_peak, (l.echo_sum_sq / two_n).sqrt());
+        meters.store_master(
+            l.master_l_peak,
+            (l.master_l_sum_sq / n).sqrt(),
+            l.master_r_peak,
+            (l.master_r_sum_sq / n).sqrt(),
+        );
 
-        interleave_and_convert_to_i32(&float_buf, &mut output_i32, NUM_CHANNELS);
+        interleave_and_convert_to_i32(&output_float, &mut output_i32, NUM_OUTPUT_CHANNELS);
 
         match output_pcm.io_i32()?.writei(&output_i32) {
             Ok(_) => {}
