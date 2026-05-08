@@ -77,11 +77,37 @@ struct Cli {
 }
 
 const PERSIST_INTERVAL: Duration = Duration::from_secs(5);
+const HEADLESS_LOAD_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
 fn wait_for_shutdown(running: &AtomicBool) {
     while running.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// Periodically log the peak DSP load measured since the last tick. Only used
+/// in headless mode — when the UI is up, it shows the load continuously.
+fn spawn_headless_load_logger(
+    running: Arc<AtomicBool>,
+    telemetry: Arc<audio::EngineTelemetry>,
+    interval: Duration,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let tick = Duration::from_millis(100);
+        let mut elapsed = Duration::ZERO;
+        // Drop whatever accumulated during startup so the first log reflects
+        // a real window, not boot noise.
+        let _ = telemetry.take_dsp_load_max_pct();
+        while running.load(Ordering::Relaxed) {
+            std::thread::sleep(tick);
+            elapsed += tick;
+            if elapsed >= interval {
+                elapsed = Duration::ZERO;
+                let max = telemetry.take_dsp_load_max_pct();
+                tracing::info!("DSP load (peak over last {:?}): {:.1}%", interval, max);
+            }
+        }
+    })
 }
 
 fn main() -> Result<()> {
@@ -133,6 +159,7 @@ fn main() -> Result<()> {
     let midi_params = audio::create_parameter_channel(MIDI_CHANNEL_CAPACITY);
     let osc_params = audio::create_parameter_channel(OSC_CHANNEL_CAPACITY);
     let meters = Arc::new(audio::MetersOutput::new(cli.input_channels as usize));
+    let telemetry = Arc::new(audio::EngineTelemetry::new());
 
     // ----- Engine -----
     let mut engine = audio::Engine::new(cli.input_device, cli.output_device, cli.sample_rate);
@@ -151,6 +178,7 @@ fn main() -> Result<()> {
         midi_params.consumer,
         osc_params.consumer,
         meters.clone(),
+        telemetry.clone(),
         cli.audio_cpu,
     )?;
 
@@ -219,13 +247,20 @@ fn main() -> Result<()> {
         // Drop the UI producer — without UI, only MIDI feeds the audio thread.
         // The UI ringbuf consumer in the audio thread just sees nothing.
         drop(ui_producer);
+        let load_logger = spawn_headless_load_logger(
+            running.clone(),
+            telemetry.clone(),
+            HEADLESS_LOAD_LOG_INTERVAL,
+        );
         wait_for_shutdown(&running);
+        let _ = load_logger.join();
     } else {
         ui::run(
             ui_producer,
             running.clone(),
             cli.input_channels as usize,
             meters,
+            telemetry,
             persisted.clone(),
             loaded_state,
         )?;

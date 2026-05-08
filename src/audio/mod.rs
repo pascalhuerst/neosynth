@@ -6,6 +6,7 @@ mod meters;
 mod parameters;
 pub mod realtime;
 mod sample_format;
+mod telemetry;
 
 pub use audio_devices::*;
 pub use buffer::*;
@@ -20,5 +21,6 @@ pub use meters::MetersOutput;
 pub use parameters::*;
 pub use realtime::*;
 pub use sample_format::SampleFormat;
+pub use telemetry::EngineTelemetry;
 
 pub const CHANNELS: usize = 2;

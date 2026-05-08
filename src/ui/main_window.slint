@@ -42,6 +42,10 @@ export component MainWindow inherits Window {
     in-out property <float> master-peak-r: 0;
     in-out property <float> master-rms-r: 0;
 
+    /// Realtime audio thread load (% of period budget). 0 = idle, 100 = right
+    /// at the limit, >100 = xrun is happening or imminent.
+    in-out property <float> dsp-load-pct: 0;
+
     // Per-effect parameter models — populated by Rust from each effect's
     // FloatParams::all() declaration.
     in-out property <[FloatParam]> reverb-params: [];
@@ -73,6 +77,34 @@ export component MainWindow inherits Window {
     Rectangle {
         background: #101012;
         border-radius: 6px;
+
+        // DSP load badge — top-right corner. Colour shifts toward red as we
+        // approach the period budget so glances are enough to spot trouble.
+        Rectangle {
+            x: parent.width - self.width - 10px;
+            y: 8px;
+            width: 110px;
+            height: 26px;
+            border-radius: 4px;
+            background: root.dsp-load-pct < 50 ? #1f2a1f
+                     : root.dsp-load-pct < 80 ? #3a3320
+                     : #4a1f1f;
+            border-color: root.dsp-load-pct < 50 ? #2a3d2a
+                       : root.dsp-load-pct < 80 ? #5a4a2a
+                       : #7a2f2f;
+            border-width: 1px;
+            Text {
+                text: "DSP " + Math.round(root.dsp-load-pct * 10) / 10 + " %";
+                color: #d8d8dc;
+                font-size: 12px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: 100%;
+                height: 100%;
+            }
+        }
+
         ScrollView {
             HorizontalBox {
                 spacing: 6px;

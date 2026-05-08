@@ -1,4 +1,6 @@
-use crate::audio::{InputParameterRingBufferProducer, InputParameters, MetersOutput};
+use crate::audio::{
+    EngineTelemetry, InputParameterRingBufferProducer, InputParameters, MetersOutput,
+};
 use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::MixerParam;
 use crate::dsp::param::FloatParams;
@@ -92,6 +94,7 @@ pub fn run(
     running: Arc<AtomicBool>,
     num_inputs: usize,
     meters: Arc<MetersOutput>,
+    telemetry: Arc<EngineTelemetry>,
     persisted: Arc<Mutex<PersistableState>>,
     loaded: AppState,
 ) -> Result<()> {
@@ -246,6 +249,7 @@ pub fn run(
     {
         let ui_weak = ui.as_weak();
         let meters = meters.clone();
+        let telemetry = telemetry.clone();
         let input_peaks = input_peaks_model.clone();
         let input_rms = input_rms_model.clone();
         let displays = displays.clone();
@@ -257,6 +261,7 @@ pub fn run(
                     return;
                 };
                 let mut d = displays.borrow_mut();
+                ui.set_dsp_load_pct(telemetry.dsp_load_peak_pct());
 
                 let n = meters.num_inputs().min(input_peaks.row_count());
                 for i in 0..n {

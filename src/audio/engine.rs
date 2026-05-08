@@ -4,6 +4,7 @@ use super::meters::MetersOutput;
 use super::parameters::InputParameters;
 use super::realtime::{prioritize_thread, set_thread_affinity};
 use super::sample_format::SampleFormat;
+use super::telemetry::EngineTelemetry;
 use crate::dsp::echo::Echo;
 use crate::dsp::mixer::Mixer;
 use crate::dsp::reverb::Reverb;
@@ -13,6 +14,7 @@ use ringbuf::traits::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
+use std::time::Instant;
 
 const NUM_OUTPUT_CHANNELS: usize = 2;
 const DEFAULT_INPUT_CHANNELS: u32 = 2;
@@ -64,6 +66,7 @@ impl Engine {
         midi_params: InputParameterRingBufferConsumer,
         osc_params: InputParameterRingBufferConsumer,
         meters: Arc<MetersOutput>,
+        telemetry: Arc<EngineTelemetry>,
         audio_cpu: usize,
     ) -> Result<JoinHandle<()>> {
         let alsa_settings = AlsaSettings {
@@ -102,6 +105,7 @@ impl Engine {
                 midi_params,
                 osc_params,
                 meters,
+                telemetry,
                 &running,
             ) {
                 tracing::error!("Audio thread error: {}", e);
@@ -124,6 +128,7 @@ fn run_audio_loop(
     mut midi_params: InputParameterRingBufferConsumer,
     mut osc_params: InputParameterRingBufferConsumer,
     meters: Arc<MetersOutput>,
+    telemetry: Arc<EngineTelemetry>,
     running: &AtomicBool,
 ) -> Result<()> {
     let bps = sample_format.bytes_per_sample();
@@ -140,13 +145,26 @@ fn run_audio_loop(
     let mut echo = Echo::new(sample_rate as f32, 1);
     let mut mixer = Mixer::new(sample_rate as f32, num_input_channels);
 
+    // Time budget per period: anything beyond this and we'll xrun.
+    let period_secs = period_size as f32 / sample_rate as f32;
+    // Per-iteration decay factors derived from period_secs so the EMA and
+    // peak-hold time constants stay consistent across buffer sizes.
+    //   EMA τ ≈ 60 ms (smooths sub-tick jitter for the readout)
+    //   peak-hold τ ≈ 600 ms (slow enough that a UI tick at 30 Hz can't miss it)
+    let ema_alpha = 1.0 - (-period_secs / 0.060).exp();
+    let peak_decay = (-period_secs / 0.600).exp();
+
+    let mut load_ema_pct: f32 = 0.0;
+    let mut load_peak_pct: f32 = 0.0;
+
     tracing::info!(
-        "Audio loop started, period_size={}, in_ch={}, out_ch={}, sample_rate={}, format={:?}",
+        "Audio loop started, period_size={}, in_ch={}, out_ch={}, sample_rate={}, format={:?}, period_budget_us={:.1}",
         period_size,
         num_input_channels,
         NUM_OUTPUT_CHANNELS,
         sample_rate,
         sample_format,
+        period_secs * 1e6,
     );
 
     while running.load(Ordering::Relaxed) {
@@ -170,6 +188,11 @@ fn run_audio_loop(
             }
             Err(e) => return Err(e.into()),
         }
+
+        // DSP work for one period — everything between getting the input and
+        // handing the output back to ALSA. Time this region; the ratio against
+        // `period_secs` is the headroom we have before we start xrunning.
+        let t_work_start = Instant::now();
 
         sample_format.decode_to_float(&input_bytes, &mut input_float, num_input_channels);
 
@@ -208,6 +231,12 @@ fn run_audio_loop(
         );
 
         sample_format.encode_from_float(&output_float, &mut output_bytes, NUM_OUTPUT_CHANNELS);
+
+        let work_secs = t_work_start.elapsed().as_secs_f32();
+        let load_pct = work_secs / period_secs * 100.0;
+        load_ema_pct += (load_pct - load_ema_pct) * ema_alpha;
+        load_peak_pct = (load_peak_pct * peak_decay).max(load_pct);
+        telemetry.store_dsp_load(load_ema_pct, load_peak_pct, load_pct);
 
         match output_pcm.io_bytes().writei(&output_bytes) {
             Ok(_) => {}
