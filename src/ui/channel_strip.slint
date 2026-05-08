@@ -105,6 +105,14 @@ export component InputChannelStrip inherits Rectangle {
     in-out property <float> meter_peak: 0.0;
     in-out property <float> meter_rms: 0.0;
 
+    // Initial values — set once at startup from persisted state.
+    in property <float> initial_gain_db: 0;
+    in property <float> initial_pan: 0;
+    in property <bool> initial_mute: false;
+    in property <float> initial_send_reverb: 0;
+    in property <float> initial_send_echo: 0;
+    in property <bool> initial_send_pre_fader: false;
+
     callback gain-changed(int, float);
     callback pan-changed(int, float);
     callback mute-changed(int, bool);
@@ -134,18 +142,19 @@ export component InputChannelStrip inherits Rectangle {
 
         Text { text: "Send Reverb"; font-size: 9px; color: #8a8a90; }
         Slider {
-            minimum: 0; maximum: 1; value: 0;
+            minimum: 0; maximum: 1; value: root.initial_send_reverb;
             changed(v) => { root.send-reverb-changed(root.index, v); }
         }
 
         Text { text: "Send Echo"; font-size: 9px; color: #8a8a90; }
         Slider {
-            minimum: 0; maximum: 1; value: 0;
+            minimum: 0; maximum: 1; value: root.initial_send_echo;
             changed(v) => { root.send-echo-changed(root.index, v); }
         }
 
         CheckBox {
             text: "Pre";
+            checked: root.initial_send_pre_fader;
             toggled => { root.send-pre-fader-changed(root.index, self.checked); }
         }
 
@@ -153,7 +162,7 @@ export component InputChannelStrip inherits Rectangle {
 
         Text { text: "Pan"; font-size: 9px; color: #8a8a90; }
         Slider {
-            minimum: -1; maximum: 1; value: 0;
+            minimum: -1; maximum: 1; value: root.initial_pan;
             changed(v) => { root.pan-changed(root.index, v); }
         }
 
@@ -165,7 +174,7 @@ export component InputChannelStrip inherits Rectangle {
                 alignment: center;
                 spacing: 4px;
                 VerticalFader {
-                    minimum: -60; maximum: 12; value: 0;
+                    minimum: -60; maximum: 12; value: root.initial_gain_db;
                     changed(v) => { root.gain-changed(root.index, v); }
                 }
                 MeterBar { peak: root.meter_peak; rms: root.meter_rms; }
@@ -181,6 +190,7 @@ export component InputChannelStrip inherits Rectangle {
 
         CheckBox {
             text: "Mute";
+            checked: root.initial_mute;
             toggled => { root.mute-changed(root.index, self.checked); }
         }
     }
@@ -190,6 +200,10 @@ export component FxReturnStrip inherits Rectangle {
     in property <string> label;
     in-out property <float> meter_peak: 0.0;
     in-out property <float> meter_rms: 0.0;
+
+    in property <float> initial_gain_db: 0;
+    in property <float> initial_pan: 0;
+    in property <bool> initial_mute: false;
 
     callback gain-changed(float);
     callback pan-changed(float);
@@ -223,7 +237,7 @@ export component FxReturnStrip inherits Rectangle {
 
         Text { text: "Pan"; font-size: 9px; color: #8a8a90; }
         Slider {
-            minimum: -1; maximum: 1; value: 0;
+            minimum: -1; maximum: 1; value: root.initial_pan;
             changed(v) => { root.pan-changed(v); }
         }
 
@@ -235,7 +249,7 @@ export component FxReturnStrip inherits Rectangle {
                 alignment: center;
                 spacing: 4px;
                 VerticalFader {
-                    minimum: -60; maximum: 12; value: 0;
+                    minimum: -60; maximum: 12; value: root.initial_gain_db;
                     changed(v) => { root.gain-changed(v); }
                 }
                 MeterBar { peak: root.meter_peak; rms: root.meter_rms; }
@@ -251,6 +265,7 @@ export component FxReturnStrip inherits Rectangle {
 
         CheckBox {
             text: "Mute";
+            checked: root.initial_mute;
             toggled => { root.mute-changed(self.checked); }
         }
     }
@@ -261,6 +276,8 @@ export component MasterStrip inherits Rectangle {
     in-out property <float> meter_peak_r: 0.0;
     in-out property <float> meter_rms_l: 0.0;
     in-out property <float> meter_rms_r: 0.0;
+
+    in property <float> initial_gain_db: 0;
 
     callback gain-changed(float);
 
@@ -290,7 +307,7 @@ export component MasterStrip inherits Rectangle {
                 alignment: center;
                 spacing: 4px;
                 VerticalFader {
-                    minimum: -60; maximum: 12; value: 0;
+                    minimum: -60; maximum: 12; value: root.initial_gain_db;
                     changed(v) => { root.gain-changed(v); }
                 }
                 MeterBar { peak: root.meter_peak_l; rms: root.meter_rms_l; }

@@ -53,7 +53,8 @@ impl Engine {
     pub fn run(
         &self,
         running: Arc<AtomicBool>,
-        params: InputParameterRingBufferConsumer,
+        ui_params: InputParameterRingBufferConsumer,
+        midi_params: InputParameterRingBufferConsumer,
         meters: Arc<MetersOutput>,
         audio_cpu: usize,
     ) -> Result<JoinHandle<()>> {
@@ -86,7 +87,8 @@ impl Engine {
                 capture_period,
                 sample_rate,
                 num_input_channels,
-                params,
+                ui_params,
+                midi_params,
                 meters,
                 &running,
             ) {
@@ -105,7 +107,8 @@ fn run_audio_loop(
     period_size: usize,
     sample_rate: u32,
     num_input_channels: usize,
-    mut params: InputParameterRingBufferConsumer,
+    mut ui_params: InputParameterRingBufferConsumer,
+    mut midi_params: InputParameterRingBufferConsumer,
     meters: Arc<MetersOutput>,
     running: &AtomicBool,
 ) -> Result<()> {
@@ -131,12 +134,11 @@ fn run_audio_loop(
     );
 
     while running.load(Ordering::Relaxed) {
-        while let Some(update) = params.try_pop() {
-            match update {
-                InputParameters::Reverb(p) => reverb.update_param(p),
-                InputParameters::Echo(p) => echo.update_param(p),
-                InputParameters::Mixer(p) => mixer.update_param(p),
-            }
+        while let Some(update) = ui_params.try_pop() {
+            dispatch(update, &mut reverb, &mut echo, &mut mixer);
+        }
+        while let Some(update) = midi_params.try_pop() {
+            dispatch(update, &mut reverb, &mut echo, &mut mixer);
         }
 
         match input_pcm.io_i32()?.readi(&mut input_i32) {
@@ -199,4 +201,13 @@ fn run_audio_loop(
     }
 
     Ok(())
+}
+
+#[inline]
+fn dispatch(update: InputParameters, reverb: &mut Reverb, echo: &mut Echo, mixer: &mut Mixer) {
+    match update {
+        InputParameters::Reverb(p) => reverb.update_param(p),
+        InputParameters::Echo(p) => echo.update_param(p),
+        InputParameters::Mixer(p) => mixer.update_param(p),
+    }
 }

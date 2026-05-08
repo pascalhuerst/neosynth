@@ -1,9 +1,11 @@
 use crate::dsp::dsp_toolbox::constants::{PI, TWO_PI};
 use crate::dsp::dsp_toolbox::math::{interpol_rt, tan};
+use crate::dsp::param::{FloatCurve, FloatParams};
 
 const ECHO_BUFFER_SIZE: usize = 131_072;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct EchoParams {
     pub send: f32,
     pub fb_local: f32,
@@ -34,6 +36,77 @@ pub enum EchoParam {
     TimeLMs(f64),
     TimeRMs(f64),
     LpfHz(f64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EchoParamKind {
+    Send,
+    FbLocal,
+    FbCross,
+    TimeLMs,
+    TimeRMs,
+    LpfHz,
+}
+
+impl FloatParams for EchoParamKind {
+    type Param = EchoParam;
+    type State = EchoParams;
+
+    fn all() -> &'static [Self] {
+        &[
+            Self::Send,
+            Self::FbLocal,
+            Self::FbCross,
+            Self::TimeLMs,
+            Self::TimeRMs,
+            Self::LpfHz,
+        ]
+    }
+
+    fn build(self, value: f64) -> EchoParam {
+        match self {
+            Self::Send => EchoParam::Send(value),
+            Self::FbLocal => EchoParam::FbLocal(value),
+            Self::FbCross => EchoParam::FbCross(value),
+            Self::TimeLMs => EchoParam::TimeLMs(value),
+            Self::TimeRMs => EchoParam::TimeRMs(value),
+            Self::LpfHz => EchoParam::LpfHz(value),
+        }
+    }
+
+    fn default_curve(self) -> FloatCurve {
+        match self {
+            Self::Send | Self::FbLocal | Self::FbCross => {
+                FloatCurve::Linear { min: 0.0, max: 1.0 }
+            }
+            Self::TimeLMs | Self::TimeRMs => {
+                FloatCurve::Linear { min: 0.0, max: 2_000.0 }
+            }
+            Self::LpfHz => FloatCurve::Log { min: 200.0, max: 16_000.0 },
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Send => "Send",
+            Self::FbLocal => "FB Local",
+            Self::FbCross => "FB Cross",
+            Self::TimeLMs => "Time L (ms)",
+            Self::TimeRMs => "Time R (ms)",
+            Self::LpfHz => "LPF (Hz)",
+        }
+    }
+
+    fn read(self, p: &EchoParams) -> f64 {
+        match self {
+            Self::Send => p.send as f64,
+            Self::FbLocal => p.fb_local as f64,
+            Self::FbCross => p.fb_cross as f64,
+            Self::TimeLMs => p.time_l_ms as f64,
+            Self::TimeRMs => p.time_r_ms as f64,
+            Self::LpfHz => p.lpf_hz as f64,
+        }
+    }
 }
 
 pub struct Echo {

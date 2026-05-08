@@ -1,0 +1,39 @@
+import { Slider, VerticalBox } from "std-widgets.slint";
+
+/// One row in a `ParamPanel`. Populated by Rust from each effect's
+/// `FloatParams::all()` declaration.
+export struct FloatParam {
+    label: string,
+    minimum: float,
+    maximum: float,
+    value: float,
+}
+
+/// Generic effect-edit panel. Renders one labeled slider per entry in
+/// `float_params`. The model is set once at startup with each parameter's
+/// default value; user drags fire `float_changed(index, value)` for the host
+/// to translate into an `InputParameters` push.
+export component ParamPanel {
+    in property <[FloatParam]> float_params;
+    callback float_changed(int, float);
+
+    VerticalBox {
+        spacing: 8px;
+        padding: 4px;
+
+        for p[i] in root.float_params: VerticalLayout {
+            spacing: 2px;
+            Text {
+                text: p.label + ": " + p.value;
+                font-size: 11px;
+                color: #c8c8d0;
+            }
+            Slider {
+                minimum: p.minimum;
+                maximum: p.maximum;
+                value: p.value;
+                changed(v) => { root.float_changed(i, v); }
+            }
+        }
+    }
+}

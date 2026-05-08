@@ -1,7 +1,24 @@
 import { ScrollView, VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
-import { ReverbPanel } from "reverb_panel.slint";
-import { EchoPanel } from "echo_panel.slint";
+import { ParamPanel, FloatParam } from "param_panel.slint";
 import { InputChannelStrip, FxReturnStrip, MasterStrip } from "channel_strip.slint";
+
+export { FloatParam }
+
+/// Initial values for one input strip — populated from persisted state.
+export struct InputStripInit {
+    gain_db: float,
+    pan: float,
+    mute: bool,
+    send_reverb: float,
+    send_echo: float,
+    send_pre_fader: bool,
+}
+
+export struct FxReturnInit {
+    gain_db: float,
+    pan: float,
+    mute: bool,
+}
 
 export component MainWindow inherits Window {
     title: "neosynth";
@@ -12,6 +29,10 @@ export component MainWindow inherits Window {
     in-out property <[string]> input-labels: [];
     in-out property <[float]> input-peaks: [];
     in-out property <[float]> input-rms: [];
+    in-out property <[InputStripInit]> input-init: [];
+    in-out property <FxReturnInit> reverb-return-init: { gain_db: 0, pan: 0, mute: false };
+    in-out property <FxReturnInit> echo-return-init: { gain_db: 0, pan: 0, mute: false };
+    in-out property <float> master-init-gain-db: 0;
     in-out property <float> reverb-peak: 0;
     in-out property <float> reverb-rms: 0;
     in-out property <float> echo-peak: 0;
@@ -21,23 +42,14 @@ export component MainWindow inherits Window {
     in-out property <float> master-peak-r: 0;
     in-out property <float> master-rms-r: 0;
 
-    // Reverb param edit
-    callback reverb-size-changed(float);
-    callback reverb-feedback-changed(float);
-    callback reverb-balance-changed(float);
-    callback reverb-pre-delay-changed(float);
-    callback reverb-hpf-changed(float);
-    callback reverb-lpf-changed(float);
-    callback reverb-chorus-changed(float);
-    callback reverb-send-changed(float);
+    // Per-effect parameter models — populated by Rust from each effect's
+    // FloatParams::all() declaration.
+    in-out property <[FloatParam]> reverb-params: [];
+    in-out property <[FloatParam]> echo-params: [];
 
-    // Echo param edit
-    callback echo-send-changed(float);
-    callback echo-fb-local-changed(float);
-    callback echo-fb-cross-changed(float);
-    callback echo-time-l-changed(float);
-    callback echo-time-r-changed(float);
-    callback echo-lpf-changed(float);
+    // Generic per-effect callback: (param_index, new_value).
+    callback reverb-param-changed(int, float);
+    callback echo-param-changed(int, float);
 
     // Mixer — input strips
     callback input-gain-changed(int, float);
@@ -72,6 +84,12 @@ export component MainWindow inherits Window {
                     label: label;
                     meter_peak: i < root.input-peaks.length ? root.input-peaks[i] : 0;
                     meter_rms: i < root.input-rms.length ? root.input-rms[i] : 0;
+                    initial_gain_db: i < root.input-init.length ? root.input-init[i].gain_db : 0;
+                    initial_pan: i < root.input-init.length ? root.input-init[i].pan : 0;
+                    initial_mute: i < root.input-init.length ? root.input-init[i].mute : false;
+                    initial_send_reverb: i < root.input-init.length ? root.input-init[i].send_reverb : 0;
+                    initial_send_echo: i < root.input-init.length ? root.input-init[i].send_echo : 0;
+                    initial_send_pre_fader: i < root.input-init.length ? root.input-init[i].send_pre_fader : false;
                     gain-changed(idx, v) => { root.input-gain-changed(idx, v); }
                     pan-changed(idx, v) => { root.input-pan-changed(idx, v); }
                     mute-changed(idx, v) => { root.input-mute-changed(idx, v); }
@@ -86,6 +104,9 @@ export component MainWindow inherits Window {
                     label: "Reverb";
                     meter_peak: root.reverb-peak;
                     meter_rms: root.reverb-rms;
+                    initial_gain_db: root.reverb-return-init.gain_db;
+                    initial_pan: root.reverb-return-init.pan;
+                    initial_mute: root.reverb-return-init.mute;
                     gain-changed(v) => { root.reverb-return-gain-changed(v); }
                     pan-changed(v) => { root.reverb-return-pan-changed(v); }
                     mute-changed(v) => { root.reverb-return-mute-changed(v); }
@@ -95,6 +116,9 @@ export component MainWindow inherits Window {
                     label: "Echo";
                     meter_peak: root.echo-peak;
                     meter_rms: root.echo-rms;
+                    initial_gain_db: root.echo-return-init.gain_db;
+                    initial_pan: root.echo-return-init.pan;
+                    initial_mute: root.echo-return-init.mute;
                     gain-changed(v) => { root.echo-return-gain-changed(v); }
                     pan-changed(v) => { root.echo-return-pan-changed(v); }
                     mute-changed(v) => { root.echo-return-mute-changed(v); }
@@ -108,6 +132,7 @@ export component MainWindow inherits Window {
                     meter_rms_l: root.master-rms-l;
                     meter_peak_r: root.master-peak-r;
                     meter_rms_r: root.master-rms-r;
+                    initial_gain_db: root.master-init-gain-db;
                     gain-changed(v) => { root.master-gain-changed(v); }
                 }
             }
@@ -149,15 +174,9 @@ export component MainWindow inherits Window {
 
                 Rectangle { height: 1px; background: #2b2b30; }
 
-                ReverbPanel {
-                    size-changed(v) => { root.reverb-size-changed(v); }
-                    feedback-changed(v) => { root.reverb-feedback-changed(v); }
-                    balance-changed(v) => { root.reverb-balance-changed(v); }
-                    pre-delay-changed(v) => { root.reverb-pre-delay-changed(v); }
-                    hpf-changed(v) => { root.reverb-hpf-changed(v); }
-                    lpf-changed(v) => { root.reverb-lpf-changed(v); }
-                    chorus-changed(v) => { root.reverb-chorus-changed(v); }
-                    send-changed(v) => { root.reverb-send-changed(v); }
+                ParamPanel {
+                    float_params: root.reverb-params;
+                    float_changed(idx, v) => { root.reverb-param-changed(idx, v); }
                 }
             }
         }
@@ -198,13 +217,9 @@ export component MainWindow inherits Window {
 
                 Rectangle { height: 1px; background: #2b2b30; }
 
-                EchoPanel {
-                    send-changed(v) => { root.echo-send-changed(v); }
-                    fb-local-changed(v) => { root.echo-fb-local-changed(v); }
-                    fb-cross-changed(v) => { root.echo-fb-cross-changed(v); }
-                    time-l-changed(v) => { root.echo-time-l-changed(v); }
-                    time-r-changed(v) => { root.echo-time-r-changed(v); }
-                    lpf-changed(v) => { root.echo-lpf-changed(v); }
+                ParamPanel {
+                    float_params: root.echo-params;
+                    float_changed(idx, v) => { root.echo-param-changed(idx, v); }
                 }
             }
         }

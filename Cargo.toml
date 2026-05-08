@@ -12,7 +12,9 @@ ctrlc = "3"
 libc = "0.2"
 num-traits = "0.2"
 ringbuf = "0.4"
+serde = { version = "1", features = ["derive"] }
 slint = "1.10"
+toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

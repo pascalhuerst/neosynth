@@ -1,13 +1,19 @@
 mod audio;
 mod dsp;
+mod midi;
+mod persist;
 mod ui;
 
 use anyhow::Result;
 use clap::Parser;
-use std::sync::Arc;
+use ringbuf::traits::Producer;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+use persist::{AppState, PersistableState, default_state_path};
 
 const PARAM_CHANNEL_CAPACITY: usize = 1024;
+const MIDI_CHANNEL_CAPACITY: usize = 256;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "neosynth realtime audio engine")]
@@ -40,6 +46,11 @@ struct Cli {
     /// Number of input channels to capture (one mixer strip per channel)
     #[arg(long, default_value_t = 2)]
     input_channels: u32,
+
+    /// ALSA raw MIDI capture device, e.g. "hw:1,0,0". MIDI subsystem is
+    /// skipped if not provided. Use `amidi -l` to list available devices.
+    #[arg(long)]
+    midi_device: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -72,9 +83,25 @@ fn main() -> Result<()> {
         })?;
     }
 
-    let params = audio::create_parameter_channel(PARAM_CHANNEL_CAPACITY);
+    // ----- Persistence: load saved state, pad/truncate inputs to current count -----
+    let state_path = default_state_path();
+    let mut loaded_state = match &state_path {
+        Some(p) => AppState::load_or_default(p),
+        None => {
+            tracing::warn!("Could not determine state file path; persistence disabled");
+            AppState::default()
+        }
+    };
+    loaded_state.align_inputs(cli.input_channels as usize);
+    let persisted: Arc<Mutex<PersistableState>> =
+        Arc::new(Mutex::new(PersistableState::new(loaded_state.clone())));
+
+    // ----- Channels and meters -----
+    let ui_params = audio::create_parameter_channel(PARAM_CHANNEL_CAPACITY);
+    let midi_params = audio::create_parameter_channel(MIDI_CHANNEL_CAPACITY);
     let meters = Arc::new(audio::MetersOutput::new(cli.input_channels as usize));
 
+    // ----- Engine -----
     let mut engine = audio::Engine::new(cli.input_device, cli.output_device, cli.sample_rate);
     if let Some(buf) = cli.buffer_size {
         engine.set_buffer_size(buf);
@@ -86,18 +113,66 @@ fn main() -> Result<()> {
 
     let audio_handle = engine.run(
         running.clone(),
-        params.consumer,
+        ui_params.consumer,
+        midi_params.consumer,
         meters.clone(),
         cli.audio_cpu,
     )?;
 
+    // Seed the audio thread with the loaded state by pushing one event per
+    // parameter through the UI producer (which we then hand to the UI itself).
+    let mut ui_producer = ui_params.producer;
+    for ev in loaded_state.replay_events() {
+        if ui_producer.try_push(ev).is_err() {
+            tracing::warn!("Initial state replay: parameter channel full");
+        }
+    }
+
+    // ----- MIDI -----
+    let midi_handle = match cli.midi_device.clone() {
+        None => {
+            tracing::info!("MIDI subsystem disabled (no --midi-device)");
+            None
+        }
+        Some(device) => match midi::run(
+            running.clone(),
+            midi_params.producer,
+            persisted.clone(),
+            device,
+            cli.input_channels as usize,
+        ) {
+            Ok(h) => Some(h),
+            Err(e) => {
+                tracing::error!("MIDI subsystem failed to start: {} (continuing without)", e);
+                None
+            }
+        },
+    };
+
+    // ----- UI (blocks until window closed / Ctrl+C) -----
     ui::run(
-        params.producer,
+        ui_producer,
         running.clone(),
         cli.input_channels as usize,
         meters,
+        persisted.clone(),
+        loaded_state,
+        state_path.clone(),
     )?;
 
+    // ----- Final save: capture anything dirty in the last debounce window -----
+    if let Some(p) = &state_path {
+        let guard = persisted.lock().expect("state lock");
+        if let Err(e) = guard.state.save_atomic(p) {
+            tracing::warn!("Final state save failed: {}", e);
+        } else {
+            tracing::info!("Saved state to {}", p.display());
+        }
+    }
+
+    if let Some(h) = midi_handle {
+        let _ = h.join();
+    }
     audio_handle
         .join()
         .map_err(|_| anyhow::anyhow!("audio thread panicked"))?;

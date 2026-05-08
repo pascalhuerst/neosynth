@@ -1,21 +1,26 @@
 use crate::audio::{InputParameterRingBufferProducer, InputParameters, MetersOutput};
-use crate::dsp::echo::EchoParam;
+use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::MixerParam;
-use crate::dsp::reverb::ReverbParam;
+use crate::dsp::param::FloatParams;
+use crate::dsp::reverb::ReverbParamKind;
+use crate::persist::{AppState, PersistableState};
 
 use anyhow::Result;
 use ringbuf::traits::Producer;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 slint::include_modules!();
 
 /// Meter ballistics — UI-side smoothing so the bars don't jitter every 33ms.
 const METER_TICK_MS: u64 = 33;
+/// How often the persister writes if state is dirty.
+const PERSIST_TICK_MS: u64 = 5_000;
 /// Peak hold time before decay starts (ticks). 45 * 33ms ≈ 1.5s.
 const PEAK_HOLD_TICKS: u32 = 45;
 /// Per-tick multiplier once peak starts decaying. ~0.92 → ~22 dB/sec.
@@ -26,8 +31,6 @@ const RMS_NEW_WEIGHT: f32 = 0.15;
 /// Bottom of the displayed dB range. 0 dB is always at the top.
 const METER_MIN_DB: f32 = -60.0;
 
-/// Map a linear amplitude (0..1+) to a meter-bar position (0..1) using a dB scale.
-/// 0 dBFS → 1.0 (top), -60 dBFS → 0.0 (bottom). Above 0 dBFS clamps to 1.0.
 #[inline]
 fn linear_to_pos(linear: f32) -> f32 {
     if linear <= 0.0 {
@@ -70,11 +73,31 @@ struct MeterDisplays {
     master_r: MeterDisplay,
 }
 
+/// Build the slint-side model for one effect's parameter list, sourcing the
+/// initial slider value from the loaded `AppState`.
+fn build_float_param_model<K: FloatParams>(state: &K::State) -> Vec<FloatParam> {
+    K::all()
+        .iter()
+        .map(|&id| {
+            let (min, max) = id.default_curve().range();
+            FloatParam {
+                label: id.name().into(),
+                minimum: min,
+                maximum: max,
+                value: id.read(state) as f32,
+            }
+        })
+        .collect()
+}
+
 pub fn run(
     producer: InputParameterRingBufferProducer,
     running: Arc<AtomicBool>,
     num_inputs: usize,
     meters: Arc<MetersOutput>,
+    persisted: Arc<Mutex<PersistableState>>,
+    loaded: AppState,
+    state_path: Option<PathBuf>,
 ) -> Result<()> {
     let ui = MainWindow::new()?;
 
@@ -85,29 +108,65 @@ pub fn run(
 
     let input_peaks_model: Rc<VecModel<f32>> =
         Rc::new(VecModel::from(vec![0.0_f32; num_inputs]));
-    let input_rms_model: Rc<VecModel<f32>> = Rc::new(VecModel::from(vec![0.0_f32; num_inputs]));
+    let input_rms_model: Rc<VecModel<f32>> =
+        Rc::new(VecModel::from(vec![0.0_f32; num_inputs]));
     ui.set_input_peaks(ModelRc::from(input_peaks_model.clone()));
     ui.set_input_rms(ModelRc::from(input_rms_model.clone()));
 
-    let producer = Rc::new(RefCell::new(producer));
+    // ----- Seed initial slider positions from the loaded state -----
 
+    // Reverb / echo float-param models.
+    ui.set_reverb_params(ModelRc::new(VecModel::from(
+        build_float_param_model::<ReverbParamKind>(&loaded.reverb),
+    )));
+    ui.set_echo_params(ModelRc::new(VecModel::from(
+        build_float_param_model::<EchoParamKind>(&loaded.echo),
+    )));
+
+    // Input strip initial values (one entry per strip).
+    let input_init: Vec<InputStripInit> = loaded
+        .mixer
+        .inputs
+        .iter()
+        .map(|s| InputStripInit {
+            gain_db: s.gain_db,
+            pan: s.pan,
+            mute: s.mute,
+            send_reverb: s.send_reverb,
+            send_echo: s.send_echo,
+            send_pre_fader: s.send_pre_fader,
+        })
+        .collect();
+    ui.set_input_init(ModelRc::new(VecModel::from(input_init)));
+
+    // FX returns + master initial values.
+    ui.set_reverb_return_init(FxReturnInit {
+        gain_db: loaded.mixer.reverb_return.gain_db,
+        pan: loaded.mixer.reverb_return.pan,
+        mute: loaded.mixer.reverb_return.mute,
+    });
+    ui.set_echo_return_init(FxReturnInit {
+        gain_db: loaded.mixer.echo_return.gain_db,
+        pan: loaded.mixer.echo_return.pan,
+        mute: loaded.mixer.echo_return.mute,
+    });
+    ui.set_master_init_gain_db(loaded.mixer.master_gain_db);
+
+    // ----- Event fanout: every UI event updates both audio + persisted state -----
+    let producer = Rc::new(RefCell::new(producer));
     let push = {
         let producer = producer.clone();
+        let persisted = persisted.clone();
         move |msg: InputParameters| {
+            // 1. Send to audio thread.
             if producer.borrow_mut().try_push(msg).is_err() {
                 tracing::warn!("Parameter channel full, dropping update");
             }
+            // 2. Mirror in the persisted state (mark dirty for the saver).
+            if let Ok(mut g) = persisted.lock() {
+                g.apply_and_mark_dirty(msg);
+            }
         }
-    };
-
-    let make_reverb_param = |variant: fn(f64) -> ReverbParam| {
-        let push = push.clone();
-        move |v: f32| push(InputParameters::Reverb(variant(v as f64)))
-    };
-
-    let make_echo_param = |variant: fn(f64) -> EchoParam| {
-        let push = push.clone();
-        move |v: f32| push(InputParameters::Echo(variant(v as f64)))
     };
 
     let make_mixer = |variant: fn(f64) -> MixerParam| {
@@ -130,25 +189,23 @@ pub fn run(
         move |idx: i32, b: bool| push(InputParameters::Mixer(variant(idx as usize, b)))
     };
 
-    // Reverb edit
-    ui.on_reverb_size_changed(make_reverb_param(ReverbParam::Size));
-    ui.on_reverb_feedback_changed(make_reverb_param(ReverbParam::Feedback));
-    ui.on_reverb_balance_changed(make_reverb_param(ReverbParam::Balance));
-    ui.on_reverb_pre_delay_changed(make_reverb_param(ReverbParam::PreDelayMs));
-    ui.on_reverb_hpf_changed(make_reverb_param(ReverbParam::HpfHz));
-    ui.on_reverb_lpf_changed(make_reverb_param(ReverbParam::LpfHz));
-    ui.on_reverb_chorus_changed(make_reverb_param(ReverbParam::Chorus));
-    ui.on_reverb_send_changed(make_reverb_param(ReverbParam::Send));
+    {
+        let push = push.clone();
+        ui.on_reverb_param_changed(move |idx: i32, v: f32| {
+            if let Some(&kind) = ReverbParamKind::all().get(idx as usize) {
+                push(InputParameters::Reverb(kind.build(v as f64)));
+            }
+        });
+    }
+    {
+        let push = push.clone();
+        ui.on_echo_param_changed(move |idx: i32, v: f32| {
+            if let Some(&kind) = EchoParamKind::all().get(idx as usize) {
+                push(InputParameters::Echo(kind.build(v as f64)));
+            }
+        });
+    }
 
-    // Echo edit
-    ui.on_echo_send_changed(make_echo_param(EchoParam::Send));
-    ui.on_echo_fb_local_changed(make_echo_param(EchoParam::FbLocal));
-    ui.on_echo_fb_cross_changed(make_echo_param(EchoParam::FbCross));
-    ui.on_echo_time_l_changed(make_echo_param(EchoParam::TimeLMs));
-    ui.on_echo_time_r_changed(make_echo_param(EchoParam::TimeRMs));
-    ui.on_echo_lpf_changed(make_echo_param(EchoParam::LpfHz));
-
-    // Mixer — input strips
     ui.on_input_gain_changed(make_indexed_mixer_f(MixerParam::InputGainDb));
     ui.on_input_pan_changed(make_indexed_mixer_f(MixerParam::InputPan));
     ui.on_input_mute_changed(make_indexed_mixer_b(MixerParam::InputMute));
@@ -156,7 +213,6 @@ pub fn run(
     ui.on_input_send_echo_changed(make_indexed_mixer_f(MixerParam::InputSendEcho));
     ui.on_input_send_pre_fader_changed(make_indexed_mixer_b(MixerParam::InputSendPreFader));
 
-    // Mixer — FX returns
     ui.on_reverb_return_gain_changed(make_mixer(MixerParam::ReverbReturnGainDb));
     ui.on_reverb_return_pan_changed(make_mixer(MixerParam::ReverbReturnPan));
     ui.on_reverb_return_mute_changed(make_mixer_bool(MixerParam::ReverbReturnMute));
@@ -164,9 +220,9 @@ pub fn run(
     ui.on_echo_return_pan_changed(make_mixer(MixerParam::EchoReturnPan));
     ui.on_echo_return_mute_changed(make_mixer_bool(MixerParam::EchoReturnMute));
 
-    // Mixer — master
     ui.on_master_gain_changed(make_mixer(MixerParam::MasterGainDb));
 
+    // ----- Shutdown timer (existing) -----
     let shutdown_timer = slint::Timer::default();
     {
         let running = running.clone();
@@ -181,6 +237,36 @@ pub fn run(
         );
     }
 
+    // ----- Periodic state saver -----
+    let persist_timer = slint::Timer::default();
+    {
+        let persisted = persisted.clone();
+        let path_opt = state_path.clone();
+        persist_timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_millis(PERSIST_TICK_MS),
+            move || {
+                let Some(path) = path_opt.as_ref() else {
+                    return;
+                };
+                let Ok(mut g) = persisted.lock() else { return };
+                if !g.dirty {
+                    return;
+                }
+                match g.state.save_atomic(path) {
+                    Ok(()) => {
+                        g.dirty = false;
+                        tracing::debug!("Persisted state to {}", path.display());
+                    }
+                    Err(e) => {
+                        tracing::warn!("Periodic save failed: {}", e);
+                    }
+                }
+            },
+        );
+    }
+
+    // ----- Meter timer -----
     let displays: Rc<RefCell<MeterDisplays>> = Rc::new(RefCell::new(MeterDisplays {
         inputs: vec![MeterDisplay::default(); num_inputs],
         reverb: MeterDisplay::default(),

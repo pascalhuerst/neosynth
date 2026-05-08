@@ -1,4 +1,5 @@
 use crate::dsp::dsp_toolbox::constants::TWO_PI;
+use crate::dsp::param::FloatCurve;
 use crate::dsp::utils::db_to_linear;
 
 #[derive(Debug, Clone, Copy)]
@@ -70,6 +71,103 @@ pub enum MixerParam {
     EchoReturnMute(bool),
 
     MasterGainDb(f64),
+}
+
+/// Float-typed mixer targets (kind only, no value). Strip-indexed targets
+/// carry the strip index because the mixer is a single component covering
+/// many strips.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixerFloatId {
+    InputGainDb(usize),
+    InputPan(usize),
+    InputSendReverb(usize),
+    InputSendEcho(usize),
+    ReverbReturnGainDb,
+    ReverbReturnPan,
+    EchoReturnGainDb,
+    EchoReturnPan,
+    MasterGainDb,
+}
+
+impl MixerFloatId {
+    pub fn build(self, v: f64) -> MixerParam {
+        match self {
+            Self::InputGainDb(i) => MixerParam::InputGainDb(i, v),
+            Self::InputPan(i) => MixerParam::InputPan(i, v),
+            Self::InputSendReverb(i) => MixerParam::InputSendReverb(i, v),
+            Self::InputSendEcho(i) => MixerParam::InputSendEcho(i, v),
+            Self::ReverbReturnGainDb => MixerParam::ReverbReturnGainDb(v),
+            Self::ReverbReturnPan => MixerParam::ReverbReturnPan(v),
+            Self::EchoReturnGainDb => MixerParam::EchoReturnGainDb(v),
+            Self::EchoReturnPan => MixerParam::EchoReturnPan(v),
+            Self::MasterGainDb => MixerParam::MasterGainDb(v),
+        }
+    }
+
+    pub fn default_curve(self) -> FloatCurve {
+        match self {
+            Self::InputGainDb(_)
+            | Self::ReverbReturnGainDb
+            | Self::EchoReturnGainDb
+            | Self::MasterGainDb => FloatCurve::Linear { min: -60.0, max: 12.0 },
+            Self::InputPan(_) | Self::ReverbReturnPan | Self::EchoReturnPan => {
+                FloatCurve::Linear { min: -1.0, max: 1.0 }
+            }
+            Self::InputSendReverb(_) | Self::InputSendEcho(_) => {
+                FloatCurve::Linear { min: 0.0, max: 1.0 }
+            }
+        }
+    }
+}
+
+/// Bool-typed mixer targets (kind only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixerBoolId {
+    InputMute(usize),
+    InputSendPreFader(usize),
+    ReverbReturnMute,
+    EchoReturnMute,
+}
+
+impl MixerBoolId {
+    pub fn build(self, v: bool) -> MixerParam {
+        match self {
+            Self::InputMute(i) => MixerParam::InputMute(i, v),
+            Self::InputSendPreFader(i) => MixerParam::InputSendPreFader(i, v),
+            Self::ReverbReturnMute => MixerParam::ReverbReturnMute(v),
+            Self::EchoReturnMute => MixerParam::EchoReturnMute(v),
+        }
+    }
+}
+
+/// Either a float-id or bool-id mixer target. Used to enumerate the mixer's
+/// parameters in the order we want for a default control-surface mapping.
+#[derive(Debug, Clone, Copy)]
+pub enum MixerParamId {
+    Float(MixerFloatId),
+    Bool(MixerBoolId),
+}
+
+/// Returns every mixer parameter in display order (per-strip block, then FX
+/// returns, then master). Strip-indexed targets are expanded for `num_inputs`.
+pub fn default_param_order(num_inputs: usize) -> Vec<MixerParamId> {
+    let mut out = Vec::new();
+    for i in 0..num_inputs {
+        out.push(MixerParamId::Float(MixerFloatId::InputGainDb(i)));
+        out.push(MixerParamId::Float(MixerFloatId::InputPan(i)));
+        out.push(MixerParamId::Float(MixerFloatId::InputSendReverb(i)));
+        out.push(MixerParamId::Float(MixerFloatId::InputSendEcho(i)));
+        out.push(MixerParamId::Bool(MixerBoolId::InputMute(i)));
+        out.push(MixerParamId::Bool(MixerBoolId::InputSendPreFader(i)));
+    }
+    out.push(MixerParamId::Float(MixerFloatId::ReverbReturnGainDb));
+    out.push(MixerParamId::Float(MixerFloatId::ReverbReturnPan));
+    out.push(MixerParamId::Bool(MixerBoolId::ReverbReturnMute));
+    out.push(MixerParamId::Float(MixerFloatId::EchoReturnGainDb));
+    out.push(MixerParamId::Float(MixerFloatId::EchoReturnPan));
+    out.push(MixerParamId::Bool(MixerBoolId::EchoReturnMute));
+    out.push(MixerParamId::Float(MixerFloatId::MasterGainDb));
+    out
 }
 
 /// Per-buffer level accumulators. The audio loop calls `Mixer::reset_levels()`

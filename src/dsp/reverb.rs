@@ -1,5 +1,6 @@
 use crate::dsp::dsp_toolbox::constants::PI;
 use crate::dsp::dsp_toolbox::math::{interpol_rt, tan};
+use crate::dsp::param::{FloatCurve, FloatParams};
 
 const REVERB_BUFFER_SIZE: usize = 16384;
 
@@ -28,7 +29,8 @@ const REV_DEL_R7: u32 = 858;
 const REV_DEL_R8: u32 = 1366;
 const REV_DEL_R9: u32 = 2676;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct ReverbParams {
     pub size: f32,
     pub feedback: f32,
@@ -65,6 +67,91 @@ pub enum ReverbParam {
     LpfHz(f64),
     Chorus(f64),
     Send(f64),
+}
+
+/// Value-less identifier for each reverb parameter. Used by mapping layers
+/// (MIDI today, OSC/automation later) to refer to a parameter without
+/// constructing a value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReverbParamKind {
+    Size,
+    Feedback,
+    Balance,
+    PreDelayMs,
+    HpfHz,
+    LpfHz,
+    Chorus,
+    Send,
+}
+
+impl FloatParams for ReverbParamKind {
+    type Param = ReverbParam;
+    type State = ReverbParams;
+
+    fn all() -> &'static [Self] {
+        &[
+            Self::Size,
+            Self::Feedback,
+            Self::Balance,
+            Self::PreDelayMs,
+            Self::HpfHz,
+            Self::LpfHz,
+            Self::Chorus,
+            Self::Send,
+        ]
+    }
+
+    fn build(self, value: f64) -> ReverbParam {
+        match self {
+            Self::Size => ReverbParam::Size(value),
+            Self::Feedback => ReverbParam::Feedback(value),
+            Self::Balance => ReverbParam::Balance(value),
+            Self::PreDelayMs => ReverbParam::PreDelayMs(value),
+            Self::HpfHz => ReverbParam::HpfHz(value),
+            Self::LpfHz => ReverbParam::LpfHz(value),
+            Self::Chorus => ReverbParam::Chorus(value),
+            Self::Send => ReverbParam::Send(value),
+        }
+    }
+
+    fn default_curve(self) -> FloatCurve {
+        match self {
+            Self::Size
+            | Self::Feedback
+            | Self::Balance
+            | Self::Chorus
+            | Self::Send => FloatCurve::Linear { min: 0.0, max: 1.0 },
+            Self::PreDelayMs => FloatCurve::Linear { min: 0.0, max: 200.0 },
+            Self::HpfHz => FloatCurve::Log { min: 20.0, max: 2_000.0 },
+            Self::LpfHz => FloatCurve::Log { min: 200.0, max: 20_000.0 },
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Size => "Size",
+            Self::Feedback => "Feedback",
+            Self::Balance => "Balance",
+            Self::PreDelayMs => "Pre-delay (ms)",
+            Self::HpfHz => "HPF (Hz)",
+            Self::LpfHz => "LPF (Hz)",
+            Self::Chorus => "Chorus",
+            Self::Send => "Send",
+        }
+    }
+
+    fn read(self, p: &ReverbParams) -> f64 {
+        match self {
+            Self::Size => p.size as f64,
+            Self::Feedback => p.feedback as f64,
+            Self::Balance => p.balance as f64,
+            Self::PreDelayMs => p.pre_delay_ms as f64,
+            Self::HpfHz => p.hpf_hz as f64,
+            Self::LpfHz => p.lpf_hz as f64,
+            Self::Chorus => p.chorus as f64,
+            Self::Send => p.send as f64,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
