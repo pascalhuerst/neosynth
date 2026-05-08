@@ -2,6 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use crate::audio::InputParameters;
 use crate::dsp::echo::{EchoParam, EchoParams};
@@ -328,4 +332,46 @@ impl PersistableState {
         self.state.apply(event);
         self.dirty = true;
     }
+}
+
+/// Spawn a persister thread that periodically writes dirty state to disk.
+/// Polls `running` every 100ms so it shuts down promptly when the app exits.
+/// Used in both UI and headless modes — the slint event loop is no longer
+/// involved in persistence timing.
+pub fn spawn_persister(
+    running: Arc<AtomicBool>,
+    persisted: Arc<Mutex<PersistableState>>,
+    path: Option<PathBuf>,
+    interval: Duration,
+) -> JoinHandle<()> {
+    std::thread::spawn(move || {
+        let tick = Duration::from_millis(100);
+        let mut elapsed = Duration::ZERO;
+        while running.load(Ordering::Relaxed) {
+            std::thread::sleep(tick);
+            elapsed += tick;
+            if elapsed < interval {
+                continue;
+            }
+            elapsed = Duration::ZERO;
+
+            let Some(p) = path.as_ref() else {
+                continue;
+            };
+            let Ok(mut g) = persisted.lock() else {
+                continue;
+            };
+            if !g.dirty {
+                continue;
+            }
+            match g.state.save_atomic(p) {
+                Ok(()) => {
+                    g.dirty = false;
+                    tracing::debug!("Persisted state to {}", p.display());
+                }
+                Err(e) => tracing::warn!("Periodic state save failed: {}", e),
+            }
+        }
+        tracing::info!("Persister thread stopped");
+    })
 }

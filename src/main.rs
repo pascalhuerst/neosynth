@@ -9,8 +9,9 @@ use clap::Parser;
 use ringbuf::traits::Producer;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use persist::{AppState, PersistableState, default_state_path};
+use persist::{AppState, PersistableState, default_state_path, spawn_persister};
 
 const PARAM_CHANNEL_CAPACITY: usize = 1024;
 const MIDI_CHANNEL_CAPACITY: usize = 256;
@@ -51,6 +52,19 @@ struct Cli {
     /// skipped if not provided. Use `amidi -l` to list available devices.
     #[arg(long)]
     midi_device: Option<String>,
+
+    /// Run headless (no UI window). The audio engine, MIDI subsystem, and
+    /// state persistence still work; the process exits on Ctrl+C.
+    #[arg(long, default_value_t = false)]
+    no_ui: bool,
+}
+
+const PERSIST_INTERVAL: Duration = Duration::from_secs(5);
+
+fn wait_for_shutdown(running: &AtomicBool) {
+    while running.load(Ordering::Relaxed) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 fn main() -> Result<()> {
@@ -149,16 +163,33 @@ fn main() -> Result<()> {
         },
     };
 
-    // ----- UI (blocks until window closed / Ctrl+C) -----
-    ui::run(
-        ui_producer,
+    // ----- Persister (runs in both UI and headless modes) -----
+    let persister_handle = spawn_persister(
         running.clone(),
-        cli.input_channels as usize,
-        meters,
         persisted.clone(),
-        loaded_state,
         state_path.clone(),
-    )?;
+        PERSIST_INTERVAL,
+    );
+
+    // ----- Run loop: UI window or headless wait -----
+    if cli.no_ui {
+        tracing::info!("Headless mode (--no-ui). Press Ctrl+C to shut down.");
+        // Drop the UI producer — without UI, only MIDI feeds the audio thread.
+        // The UI ringbuf consumer in the audio thread just sees nothing.
+        drop(ui_producer);
+        wait_for_shutdown(&running);
+    } else {
+        ui::run(
+            ui_producer,
+            running.clone(),
+            cli.input_channels as usize,
+            meters,
+            persisted.clone(),
+            loaded_state,
+        )?;
+        // ui::run already flips running=false on close, but make it explicit.
+        running.store(false, Ordering::SeqCst);
+    }
 
     // ----- Final save: capture anything dirty in the last debounce window -----
     if let Some(p) = &state_path {
@@ -170,6 +201,7 @@ fn main() -> Result<()> {
         }
     }
 
+    let _ = persister_handle.join();
     if let Some(h) = midi_handle {
         let _ = h.join();
     }

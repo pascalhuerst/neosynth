@@ -9,7 +9,6 @@ use anyhow::Result;
 use ringbuf::traits::Producer;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -19,8 +18,6 @@ slint::include_modules!();
 
 /// Meter ballistics — UI-side smoothing so the bars don't jitter every 33ms.
 const METER_TICK_MS: u64 = 33;
-/// How often the persister writes if state is dirty.
-const PERSIST_TICK_MS: u64 = 5_000;
 /// Peak hold time before decay starts (ticks). 45 * 33ms ≈ 1.5s.
 const PEAK_HOLD_TICKS: u32 = 45;
 /// Per-tick multiplier once peak starts decaying. ~0.92 → ~22 dB/sec.
@@ -97,7 +94,6 @@ pub fn run(
     meters: Arc<MetersOutput>,
     persisted: Arc<Mutex<PersistableState>>,
     loaded: AppState,
-    state_path: Option<PathBuf>,
 ) -> Result<()> {
     let ui = MainWindow::new()?;
 
@@ -232,35 +228,6 @@ pub fn run(
             move || {
                 if !running.load(Ordering::Relaxed) {
                     let _ = slint::quit_event_loop();
-                }
-            },
-        );
-    }
-
-    // ----- Periodic state saver -----
-    let persist_timer = slint::Timer::default();
-    {
-        let persisted = persisted.clone();
-        let path_opt = state_path.clone();
-        persist_timer.start(
-            slint::TimerMode::Repeated,
-            Duration::from_millis(PERSIST_TICK_MS),
-            move || {
-                let Some(path) = path_opt.as_ref() else {
-                    return;
-                };
-                let Ok(mut g) = persisted.lock() else { return };
-                if !g.dirty {
-                    return;
-                }
-                match g.state.save_atomic(path) {
-                    Ok(()) => {
-                        g.dirty = false;
-                        tracing::debug!("Persisted state to {}", path.display());
-                    }
-                    Err(e) => {
-                        tracing::warn!("Periodic save failed: {}", e);
-                    }
                 }
             },
         );
