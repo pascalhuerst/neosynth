@@ -68,4 +68,17 @@ pub trait FloatParams: Copy + 'static + Sized {
     fn default_value(self) -> f64 {
         self.read(&Self::State::default())
     }
+
+    /// OSC namespace for this effect (e.g. `"/reverb"`). Concatenated with
+    /// `osc_segment()` to produce a full address.
+    fn osc_namespace() -> &'static str;
+
+    /// OSC path segment for this parameter (e.g. `"size"`, `"pre_delay_ms"`).
+    /// Snake-case, no leading slash.
+    fn osc_segment(self) -> &'static str;
+
+    /// Full OSC address for this parameter (default impl: namespace + "/" + segment).
+    fn osc_path(self) -> String {
+        format!("{}/{}", Self::osc_namespace(), self.osc_segment())
+    }
 }

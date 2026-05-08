@@ -707,6 +707,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
 name = "byteorder-lite"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2930,6 +2936,7 @@ dependencies = [
  "libc",
  "num-traits",
  "ringbuf",
+ "rosc",
  "serde",
  "slint",
  "slint-build",
@@ -4052,6 +4059,16 @@ dependencies = [
  "crossbeam-utils",
  "portable-atomic",
  "portable-atomic-util",
+]
+
+[[package]]
+name = "rosc"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2e63d9e6b0d090be1485cf159b1e04c3973d2d3e1614963544ea2ff47a4a981"
+dependencies = [
+ "byteorder",
+ "nom 7.1.3",
 ]
 
 [[package]]

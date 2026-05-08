@@ -118,6 +118,27 @@ impl MixerFloatId {
             }
         }
     }
+
+    /// Default user-facing value (in the units the OSC address expects):
+    /// 0.0 dB / 0.0 pan / 0.0 send, regardless of variant.
+    pub fn default_value(self) -> f32 {
+        0.0
+    }
+
+    /// Full OSC address for this mixer parameter.
+    pub fn osc_path(self) -> String {
+        match self {
+            Self::InputGainDb(i) => format!("/mixer/input/{i}/gain_db"),
+            Self::InputPan(i) => format!("/mixer/input/{i}/pan"),
+            Self::InputSendReverb(i) => format!("/mixer/input/{i}/send_reverb"),
+            Self::InputSendEcho(i) => format!("/mixer/input/{i}/send_echo"),
+            Self::ReverbReturnGainDb => "/mixer/reverb_return/gain_db".into(),
+            Self::ReverbReturnPan => "/mixer/reverb_return/pan".into(),
+            Self::EchoReturnGainDb => "/mixer/echo_return/gain_db".into(),
+            Self::EchoReturnPan => "/mixer/echo_return/pan".into(),
+            Self::MasterGainDb => "/mixer/master/gain_db".into(),
+        }
+    }
 }
 
 /// Bool-typed mixer targets (kind only).
@@ -136,6 +157,19 @@ impl MixerBoolId {
             Self::InputSendPreFader(i) => MixerParam::InputSendPreFader(i, v),
             Self::ReverbReturnMute => MixerParam::ReverbReturnMute(v),
             Self::EchoReturnMute => MixerParam::EchoReturnMute(v),
+        }
+    }
+
+    pub fn default_value(self) -> bool {
+        false
+    }
+
+    pub fn osc_path(self) -> String {
+        match self {
+            Self::InputMute(i) => format!("/mixer/input/{i}/mute"),
+            Self::InputSendPreFader(i) => format!("/mixer/input/{i}/send_pre_fader"),
+            Self::ReverbReturnMute => "/mixer/reverb_return/mute".into(),
+            Self::EchoReturnMute => "/mixer/echo_return/mute".into(),
         }
     }
 }

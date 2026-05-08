@@ -5,6 +5,7 @@ mod engine;
 mod meters;
 mod parameters;
 pub mod realtime;
+mod sample_format;
 
 pub use audio_devices::*;
 pub use buffer::*;
@@ -18,5 +19,6 @@ pub use engine::*;
 pub use meters::MetersOutput;
 pub use parameters::*;
 pub use realtime::*;
+pub use sample_format::SampleFormat;
 
 pub const CHANNELS: usize = 2;

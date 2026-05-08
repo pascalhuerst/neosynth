@@ -152,6 +152,23 @@ impl FloatParams for ReverbParamKind {
             Self::Send => p.send as f64,
         }
     }
+
+    fn osc_namespace() -> &'static str {
+        "/reverb"
+    }
+
+    fn osc_segment(self) -> &'static str {
+        match self {
+            Self::Size => "size",
+            Self::Feedback => "feedback",
+            Self::Balance => "balance",
+            Self::PreDelayMs => "pre_delay_ms",
+            Self::HpfHz => "hpf_hz",
+            Self::LpfHz => "lpf_hz",
+            Self::Chorus => "chorus",
+            Self::Send => "send",
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]

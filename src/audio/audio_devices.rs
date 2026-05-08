@@ -1,4 +1,5 @@
-use alsa::pcm::{Access, Format, HwParams};
+use super::sample_format::SampleFormat;
+use alsa::pcm::{Access, HwParams};
 use alsa::{Direction, PCM};
 use anyhow::Result;
 
@@ -17,6 +18,8 @@ pub struct AlsaSettings {
     pub num_input_channels: u32,
     pub num_output_channels: u32,
     pub sample_rate: u32,
+    /// PCM sample format on the wire. Internal DSP is always f32.
+    pub sample_format: SampleFormat,
     /// Buffer size in frames, used for both capture and playback (default: 512).
     pub buffer_size: Option<u32>,
     /// Period size in frames; if `None`, uses `buffer_size / TARGET_PERIODS`.
@@ -29,13 +32,14 @@ fn configure_pcm(
     label: &str,
     num_channels: u32,
     sample_rate: u32,
+    sample_format: SampleFormat,
     buffer_size: i64,
     period_size: Option<i64>,
 ) -> Result<()> {
     let hwp = HwParams::any(pcm)?;
 
     hwp.set_access(Access::RWInterleaved)?;
-    hwp.set_format(Format::s32())?;
+    hwp.set_format(sample_format.alsa_format())?;
     hwp.set_channels(num_channels)?;
 
     // Disable ALSA's software resampling — we do our own pitch-based resampling
@@ -57,9 +61,10 @@ fn configure_pcm(
     let latency_ms = actual_buffer as f64 / actual_rate as f64 * 1000.0;
 
     tracing::info!(
-        "{}: rate={}, channels={}, buffer={} ({:.1}ms), period={}, periods={}",
+        "{}: rate={}, format={:?}, channels={}, buffer={} ({:.1}ms), period={}, periods={}",
         label,
         actual_rate,
+        sample_format,
         actual_channels,
         actual_buffer,
         latency_ms,
@@ -84,6 +89,7 @@ pub fn configure_audio_devices(settings: &AlsaSettings) -> Result<(PCM, PCM, usi
         "Capture",
         settings.num_input_channels,
         settings.sample_rate,
+        settings.sample_format,
         target_buffer,
         target_period,
     )?;
@@ -95,6 +101,7 @@ pub fn configure_audio_devices(settings: &AlsaSettings) -> Result<(PCM, PCM, usi
         "Playback",
         settings.num_output_channels,
         settings.sample_rate,
+        settings.sample_format,
         target_buffer,
         target_period,
     )?;

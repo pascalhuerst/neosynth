@@ -1,12 +1,15 @@
 mod audio;
 mod dsp;
 mod midi;
+mod osc;
 mod persist;
 mod ui;
 
 use anyhow::Result;
+use audio::SampleFormat;
 use clap::Parser;
 use ringbuf::traits::Producer;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -15,6 +18,7 @@ use persist::{AppState, PersistableState, default_state_path, spawn_persister};
 
 const PARAM_CHANNEL_CAPACITY: usize = 1024;
 const MIDI_CHANNEL_CAPACITY: usize = 256;
+const OSC_CHANNEL_CAPACITY: usize = 256;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "neosynth realtime audio engine")]
@@ -30,6 +34,12 @@ struct Cli {
     /// Sample rate in Hz
     #[arg(long, default_value_t = 48_000)]
     sample_rate: u32,
+
+    /// PCM sample format on the ALSA wire. Internal DSP is always f32.
+    /// Pick whichever your soundcard supports (e.g. cards with no s32le
+    /// often only offer s24_3le / s24_3be).
+    #[arg(long, value_enum, default_value_t = SampleFormat::S32Le)]
+    sample_format: SampleFormat,
 
     /// Buffer size in frames (applied to both capture and playback). Smaller = lower latency,
     /// higher xrun risk.
@@ -52,6 +62,13 @@ struct Cli {
     /// skipped if not provided. Use `amidi -l` to list available devices.
     #[arg(long)]
     midi_device: Option<String>,
+
+    /// OSC listen address (UDP), e.g. "0.0.0.0:9000". OSC subsystem is
+    /// skipped if not provided. External apps can query the parameter list
+    /// by sending a `/list` message; replies arrive as `/list/item` then
+    /// `/list/end`.
+    #[arg(long)]
+    osc_listen: Option<SocketAddr>,
 
     /// Run headless (no UI window). The audio engine, MIDI subsystem, and
     /// state persistence still work; the process exits on Ctrl+C.
@@ -78,10 +95,11 @@ fn main() -> Result<()> {
         .init();
 
     tracing::info!(
-        "Starting: input={}, output={}, sample_rate={}, in_ch={}, buffer_size={:?}, period_size={:?}, audio_cpu={}",
+        "Starting: input={}, output={}, sample_rate={}, sample_format={:?}, in_ch={}, buffer_size={:?}, period_size={:?}, audio_cpu={}",
         cli.input_device,
         cli.output_device,
         cli.sample_rate,
+        cli.sample_format,
         cli.input_channels,
         cli.buffer_size,
         cli.period_size,
@@ -113,10 +131,12 @@ fn main() -> Result<()> {
     // ----- Channels and meters -----
     let ui_params = audio::create_parameter_channel(PARAM_CHANNEL_CAPACITY);
     let midi_params = audio::create_parameter_channel(MIDI_CHANNEL_CAPACITY);
+    let osc_params = audio::create_parameter_channel(OSC_CHANNEL_CAPACITY);
     let meters = Arc::new(audio::MetersOutput::new(cli.input_channels as usize));
 
     // ----- Engine -----
     let mut engine = audio::Engine::new(cli.input_device, cli.output_device, cli.sample_rate);
+    engine.set_sample_format(cli.sample_format);
     if let Some(buf) = cli.buffer_size {
         engine.set_buffer_size(buf);
     }
@@ -129,6 +149,7 @@ fn main() -> Result<()> {
         running.clone(),
         ui_params.consumer,
         midi_params.consumer,
+        osc_params.consumer,
         meters.clone(),
         cli.audio_cpu,
     )?;
@@ -158,6 +179,27 @@ fn main() -> Result<()> {
             Ok(h) => Some(h),
             Err(e) => {
                 tracing::error!("MIDI subsystem failed to start: {} (continuing without)", e);
+                None
+            }
+        },
+    };
+
+    // ----- OSC -----
+    let osc_handle = match cli.osc_listen {
+        None => {
+            tracing::info!("OSC subsystem disabled (no --osc-listen)");
+            None
+        }
+        Some(addr) => match osc::run(
+            running.clone(),
+            osc_params.producer,
+            persisted.clone(),
+            addr,
+            cli.input_channels as usize,
+        ) {
+            Ok(h) => Some(h),
+            Err(e) => {
+                tracing::error!("OSC subsystem failed to start: {} (continuing without)", e);
                 None
             }
         },
@@ -203,6 +245,9 @@ fn main() -> Result<()> {
 
     let _ = persister_handle.join();
     if let Some(h) = midi_handle {
+        let _ = h.join();
+    }
+    if let Some(h) = osc_handle {
         let _ = h.join();
     }
     audio_handle

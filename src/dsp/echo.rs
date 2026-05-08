@@ -107,6 +107,21 @@ impl FloatParams for EchoParamKind {
             Self::LpfHz => p.lpf_hz as f64,
         }
     }
+
+    fn osc_namespace() -> &'static str {
+        "/echo"
+    }
+
+    fn osc_segment(self) -> &'static str {
+        match self {
+            Self::Send => "send",
+            Self::FbLocal => "fb_local",
+            Self::FbCross => "fb_cross",
+            Self::TimeLMs => "time_l_ms",
+            Self::TimeRMs => "time_r_ms",
+            Self::LpfHz => "lpf_hz",
+        }
+    }
 }
 
 pub struct Echo {

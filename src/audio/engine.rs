@@ -3,10 +3,10 @@ use super::channels::InputParameterRingBufferConsumer;
 use super::meters::MetersOutput;
 use super::parameters::InputParameters;
 use super::realtime::{prioritize_thread, set_thread_affinity};
+use super::sample_format::SampleFormat;
 use crate::dsp::echo::Echo;
 use crate::dsp::mixer::Mixer;
 use crate::dsp::reverb::Reverb;
-use crate::dsp::utils::{deinterleave_and_convert_to_float, interleave_and_convert_to_i32};
 
 use anyhow::Result;
 use ringbuf::traits::*;
@@ -16,11 +16,13 @@ use std::thread::JoinHandle;
 
 const NUM_OUTPUT_CHANNELS: usize = 2;
 const DEFAULT_INPUT_CHANNELS: u32 = 2;
+const DEFAULT_SAMPLE_FORMAT: SampleFormat = SampleFormat::S32Le;
 
 pub struct Engine {
     input_device: String,
     output_device: String,
     sample_rate: u32,
+    sample_format: SampleFormat,
     buffer_size: Option<u32>,
     period_size: Option<u32>,
     num_input_channels: u32,
@@ -32,10 +34,15 @@ impl Engine {
             input_device,
             output_device,
             sample_rate,
+            sample_format: DEFAULT_SAMPLE_FORMAT,
             buffer_size: None,
             period_size: None,
             num_input_channels: DEFAULT_INPUT_CHANNELS,
         }
+    }
+
+    pub fn set_sample_format(&mut self, fmt: SampleFormat) {
+        self.sample_format = fmt;
     }
 
     pub fn set_buffer_size(&mut self, size: u32) {
@@ -55,6 +62,7 @@ impl Engine {
         running: Arc<AtomicBool>,
         ui_params: InputParameterRingBufferConsumer,
         midi_params: InputParameterRingBufferConsumer,
+        osc_params: InputParameterRingBufferConsumer,
         meters: Arc<MetersOutput>,
         audio_cpu: usize,
     ) -> Result<JoinHandle<()>> {
@@ -64,6 +72,7 @@ impl Engine {
             num_input_channels: self.num_input_channels,
             num_output_channels: NUM_OUTPUT_CHANNELS as u32,
             sample_rate: self.sample_rate,
+            sample_format: self.sample_format,
             buffer_size: self.buffer_size,
             period_size: self.period_size,
         };
@@ -77,6 +86,7 @@ impl Engine {
         input_pcm.start()?;
 
         let sample_rate = self.sample_rate;
+        let sample_format = self.sample_format;
         let num_input_channels = self.num_input_channels as usize;
         let handle = std::thread::spawn(move || {
             set_thread_affinity(audio_cpu);
@@ -86,9 +96,11 @@ impl Engine {
                 output_pcm,
                 capture_period,
                 sample_rate,
+                sample_format,
                 num_input_channels,
                 ui_params,
                 midi_params,
+                osc_params,
                 meters,
                 &running,
             ) {
@@ -106,19 +118,22 @@ fn run_audio_loop(
     output_pcm: alsa::PCM,
     period_size: usize,
     sample_rate: u32,
+    sample_format: SampleFormat,
     num_input_channels: usize,
     mut ui_params: InputParameterRingBufferConsumer,
     mut midi_params: InputParameterRingBufferConsumer,
+    mut osc_params: InputParameterRingBufferConsumer,
     meters: Arc<MetersOutput>,
     running: &AtomicBool,
 ) -> Result<()> {
+    let bps = sample_format.bytes_per_sample();
     let input_total = period_size * num_input_channels;
     let output_total = period_size * NUM_OUTPUT_CHANNELS;
 
-    let mut input_i32 = vec![0i32; input_total];
+    let mut input_bytes = vec![0u8; input_total * bps];
     let mut input_float = vec![0.0f32; input_total];
     let mut output_float = vec![0.0f32; output_total];
-    let mut output_i32 = vec![0i32; output_total];
+    let mut output_bytes = vec![0u8; output_total * bps];
     let mut frame: Vec<f32> = vec![0.0; num_input_channels];
 
     let mut reverb = Reverb::new(sample_rate as f32, 1);
@@ -126,11 +141,12 @@ fn run_audio_loop(
     let mut mixer = Mixer::new(sample_rate as f32, num_input_channels);
 
     tracing::info!(
-        "Audio loop started, period_size={}, in_ch={}, out_ch={}, sample_rate={}",
+        "Audio loop started, period_size={}, in_ch={}, out_ch={}, sample_rate={}, format={:?}",
         period_size,
         num_input_channels,
         NUM_OUTPUT_CHANNELS,
         sample_rate,
+        sample_format,
     );
 
     while running.load(Ordering::Relaxed) {
@@ -140,8 +156,11 @@ fn run_audio_loop(
         while let Some(update) = midi_params.try_pop() {
             dispatch(update, &mut reverb, &mut echo, &mut mixer);
         }
+        while let Some(update) = osc_params.try_pop() {
+            dispatch(update, &mut reverb, &mut echo, &mut mixer);
+        }
 
-        match input_pcm.io_i32()?.readi(&mut input_i32) {
+        match input_pcm.io_bytes().readi(&mut input_bytes) {
             Ok(_) => {}
             Err(e) if e.errno() == libc::EPIPE => {
                 tracing::warn!("Capture overrun, recovering");
@@ -152,7 +171,7 @@ fn run_audio_loop(
             Err(e) => return Err(e.into()),
         }
 
-        deinterleave_and_convert_to_float(&input_i32, &mut input_float, num_input_channels);
+        sample_format.decode_to_float(&input_bytes, &mut input_float, num_input_channels);
 
         mixer.reset_levels();
 
@@ -188,9 +207,9 @@ fn run_audio_loop(
             (l.master_r_sum_sq / n).sqrt(),
         );
 
-        interleave_and_convert_to_i32(&output_float, &mut output_i32, NUM_OUTPUT_CHANNELS);
+        sample_format.encode_from_float(&output_float, &mut output_bytes, NUM_OUTPUT_CHANNELS);
 
-        match output_pcm.io_i32()?.writei(&output_i32) {
+        match output_pcm.io_bytes().writei(&output_bytes) {
             Ok(_) => {}
             Err(e) if e.errno() == libc::EPIPE => {
                 tracing::warn!("Playback underrun, recovering");
