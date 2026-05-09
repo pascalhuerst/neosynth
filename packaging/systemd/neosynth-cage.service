@@ -1,0 +1,73 @@
+[Unit]
+Description=neosynth realtime audio engine (cage kiosk on tty1)
+Documentation=https://www.hjdskes.nl/projects/cage/
+# Wait for ALSA + multiuser, fight getty for tty1.
+After=systemd-user-sessions.service plymouth-quit.service sound.target getty@tty1.service
+Wants=sound.target
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+
+# `PAMName=login` runs the system "login" PAM stack for `User=` below — this
+# is what creates a logind session with a real seat, which is what cage's
+# libseat needs to acquire DRM/input. Without this, you get the same "No
+# backend was able to open a seat" error as over SSH.
+#
+# IMPORTANT: the user named in `User=` must have a real login shell (not
+# /usr/sbin/nologin), otherwise PAM blocks the session. Recreate the user
+# with `--shell /bin/sh` or run:  sudo usermod -s /bin/sh neosynth
+PAMName=login
+User=neosynth
+SupplementaryGroups=audio video input
+
+# Own tty1: hide kernel messages, hangup any leftovers, allocate a fresh VT.
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+
+# Realtime privileges (no `setcap` on the binary needed).
+AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+LimitNICE=-20
+
+# State persistence: the engine writes to $XDG_CONFIG_HOME/neosynth/state.toml.
+Environment=XDG_CONFIG_HOME=/var/lib
+StateDirectory=neosynth
+StateDirectoryMode=0750
+Environment=RUST_LOG=info
+
+# Inhibit lid-suspend while the service runs, then launch cage with the
+# audio engine. cage replaces its child via fork+exec, so realtime caps and
+# rlimits propagate down to the neosynth threads.
+ExecStart=/usr/bin/systemd-inhibit \
+    --what=handle-lid-switch:sleep \
+    --who=neosynth \
+    --why="realtime audio engine running" \
+    --mode=block \
+    /usr/bin/cage -s -- \
+    /usr/sbin/neosynth \
+        --input-device hw:0,0,0 \
+        --output-device hw:0,0,0 \
+        --sample-rate 48000 \
+        --buffer-size 128 \
+        --sample-format s24_3be \
+        --audio-cpu 2 \
+        --worker-cpu 3 \
+        --osc-listen 0.0.0.0:9000
+
+Restart=on-failure
+RestartSec=2
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target
