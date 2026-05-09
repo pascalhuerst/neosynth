@@ -61,11 +61,6 @@ impl EngineTelemetry {
     }
 
     #[inline]
-    pub fn dsp_load_pct(&self) -> f32 {
-        f32::from_bits(self.dsp_load_pct.load(Ordering::Relaxed))
-    }
-
-    #[inline]
     pub fn dsp_load_peak_pct(&self) -> f32 {
         f32::from_bits(self.dsp_load_peak_pct.load(Ordering::Relaxed))
     }

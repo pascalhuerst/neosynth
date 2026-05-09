@@ -348,10 +348,7 @@ impl Reverb {
         reverb
     }
 
-    pub fn params(&self) -> &ReverbParams {
-        &self.params
-    }
-
+    #[cfg(test)]
     pub fn set_params(&mut self, params: ReverbParams) {
         self.params = params;
         self.refresh_smoothers();
@@ -390,24 +387,6 @@ impl Reverb {
 
         let hpf = self.params.hpf_hz.clamp(0.1, self.omega_clip_max);
         self.smooth_hp_omega.set_target(tan(hpf * self.warp_const_pi));
-    }
-
-    pub fn reset(&mut self) {
-        self.lp_state_l = 0.0;
-        self.lp_state_r = 0.0;
-        self.hp_state_l = 0.0;
-        self.hp_state_r = 0.0;
-
-        self.pre_buf_l.fill(0.0);
-        self.pre_buf_r.fill(0.0);
-        for buf in self.delay_l.iter_mut() {
-            buf.fill(0.0);
-        }
-        for buf in self.delay_r.iter_mut() {
-            buf.fill(0.0);
-        }
-        self.state_l = [0.0; 9];
-        self.state_r = [0.0; 9];
     }
 
     pub fn apply(&mut self, raw_l: f32, raw_r: f32) {

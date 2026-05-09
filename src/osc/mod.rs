@@ -1,6 +1,6 @@
 mod router;
 
-pub use router::{OscParamKind, OscParameter, OscRouter};
+use router::{OscParamKind, OscRouter};
 
 use crate::audio::InputParameterRingBufferProducer;
 use crate::persist::PersistableState;

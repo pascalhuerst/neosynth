@@ -48,6 +48,8 @@ pub enum BoolMode {
     Latched,
     /// Controller sends a momentary value; we toggle our internal state on
     /// the rising edge (low → high crossing of `threshold`).
+    /// Reserved for momentary footswitches / pads — not yet wired to a binding.
+    #[allow(dead_code)]
     Toggle { threshold: u8 },
 }
 

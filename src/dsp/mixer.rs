@@ -277,26 +277,6 @@ impl Mixer {
         }
     }
 
-    pub fn num_inputs(&self) -> usize {
-        self.inputs.len()
-    }
-
-    pub fn input(&self, idx: usize) -> Option<&InputStripParams> {
-        self.inputs.get(idx)
-    }
-
-    pub fn reverb_return(&self) -> &FxReturnParams {
-        &self.reverb_return
-    }
-
-    pub fn echo_return(&self) -> &FxReturnParams {
-        &self.echo_return
-    }
-
-    pub fn master(&self) -> &MasterParams {
-        &self.master
-    }
-
     pub fn levels(&self) -> &Levels {
         &self.levels
     }
@@ -372,17 +352,6 @@ impl Mixer {
                 self.master.gain = db_to_linear(db as f32);
             }
         }
-    }
-
-    pub fn reset(&mut self) {
-        self.master_l = 0.0;
-        self.master_r = 0.0;
-        self.reverb_bus_l = 0.0;
-        self.reverb_bus_r = 0.0;
-        self.echo_bus_l = 0.0;
-        self.echo_bus_r = 0.0;
-        self.hp_state_l = 0.0;
-        self.hp_state_r = 0.0;
     }
 
     /// Reset master and FX buses, then accumulate input strips.

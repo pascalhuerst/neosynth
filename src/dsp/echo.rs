@@ -221,10 +221,7 @@ impl Echo {
         echo
     }
 
-    pub fn params(&self) -> &EchoParams {
-        &self.params
-    }
-
+    #[cfg(test)]
     pub fn set_params(&mut self, params: EchoParams) {
         self.params = params;
         self.refresh();
@@ -255,25 +252,6 @@ impl Echo {
             .clamp(0.0, max_samples);
         self.time_r_samples = (self.params.time_r_ms * 0.001 * self.sample_rate)
             .clamp(0.0, max_samples);
-    }
-
-    pub fn reset(&mut self) {
-        self.out_l = 0.0;
-        self.out_r = 0.0;
-        self.hp_state_l1 = 0.0;
-        self.hp_state_l2 = 0.0;
-        self.hp_state_r1 = 0.0;
-        self.hp_state_r2 = 0.0;
-        self.lp_state_l1 = 0.0;
-        self.lp_state_l2 = 0.0;
-        self.lp_state_r1 = 0.0;
-        self.lp_state_r2 = 0.0;
-        self.lp2hz_state_l = 0.0;
-        self.lp2hz_state_r = 0.0;
-        self.fb_state_l = 0.0;
-        self.fb_state_r = 0.0;
-        self.buffer_l.fill(0.0);
-        self.buffer_r.fill(0.0);
     }
 
     pub fn apply(&mut self, raw_l: f32, raw_r: f32) {
