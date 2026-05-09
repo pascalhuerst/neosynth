@@ -217,6 +217,13 @@ export component InputChannelStrip inherits Rectangle {
     callback send-echo-changed(int, float);
     callback send-pre-fader-changed(int, bool);
 
+    // Live fader/slider values — kept in two-way binding with the controls
+    // below so the readout texts can show the current value at all times.
+    property <float> live_gain_db: root.initial_gain_db;
+    property <float> live_pan: root.initial_pan;
+    property <float> live_send_reverb: root.initial_send_reverb;
+    property <float> live_send_echo: root.initial_send_echo;
+
     width: 96px;
     background: #1c1c1f;
     border-color: #2b2b30;
@@ -237,15 +244,21 @@ export component InputChannelStrip inherits Rectangle {
 
         Rectangle { height: 1px; background: #2b2b30; }
 
-        Text { text: "Send Reverb"; font-size: 9px; color: #8a8a90; }
+        Text {
+            text: "Reverb: " + Math.round(root.live_send_reverb * 100) / 100;
+            font-size: 9px; color: #8a8a90;
+        }
         Slider {
-            minimum: 0; maximum: 1; value: root.initial_send_reverb;
+            minimum: 0; maximum: 1; value <=> root.live_send_reverb;
             changed(v) => { root.send-reverb-changed(root.index, v); }
         }
 
-        Text { text: "Send Echo"; font-size: 9px; color: #8a8a90; }
+        Text {
+            text: "Echo: " + Math.round(root.live_send_echo * 100) / 100;
+            font-size: 9px; color: #8a8a90;
+        }
         Slider {
-            minimum: 0; maximum: 1; value: root.initial_send_echo;
+            minimum: 0; maximum: 1; value <=> root.live_send_echo;
             changed(v) => { root.send-echo-changed(root.index, v); }
         }
 
@@ -257,9 +270,12 @@ export component InputChannelStrip inherits Rectangle {
 
         Rectangle { height: 1px; background: #2b2b30; }
 
-        Text { text: "Pan"; font-size: 9px; color: #8a8a90; }
+        Text {
+            text: "Pan: " + Math.round(root.live_pan * 100) / 100;
+            font-size: 9px; color: #8a8a90;
+        }
         HorizontalBipolarFader {
-            minimum: -1; maximum: 1; value: root.initial_pan;
+            minimum: -1; maximum: 1; value <=> root.live_pan;
             changed(v) => { root.pan-changed(root.index, v); }
         }
 
@@ -271,7 +287,7 @@ export component InputChannelStrip inherits Rectangle {
                 alignment: center;
                 spacing: 4px;
                 VerticalFader {
-                    minimum: -60; maximum: 12; value: root.initial_gain_db;
+                    minimum: -60; maximum: 12; value <=> root.live_gain_db;
                     changed(v) => { root.gain-changed(root.index, v); }
                 }
                 MeterBar { peak: root.meter_peak; rms: root.meter_rms; }
@@ -279,9 +295,9 @@ export component InputChannelStrip inherits Rectangle {
         }
 
         Text {
-            text: "Gain (dB)";
-            font-size: 9px;
-            color: #8a8a90;
+            text: Math.round(root.live_gain_db * 10) / 10 + " dB";
+            font-size: 10px;
+            color: #d8d8dc;
             horizontal-alignment: center;
         }
 
@@ -306,6 +322,9 @@ export component FxReturnStrip inherits Rectangle {
     callback pan-changed(float);
     callback mute-changed(bool);
     callback edit-clicked();
+
+    property <float> live_gain_db: root.initial_gain_db;
+    property <float> live_pan: root.initial_pan;
 
     width: 96px;
     background: #1f1c22;
@@ -332,9 +351,12 @@ export component FxReturnStrip inherits Rectangle {
 
         Rectangle { height: 1px; background: #36303a; }
 
-        Text { text: "Pan"; font-size: 9px; color: #8a8a90; }
+        Text {
+            text: "Pan: " + Math.round(root.live_pan * 100) / 100;
+            font-size: 9px; color: #8a8a90;
+        }
         HorizontalBipolarFader {
-            minimum: -1; maximum: 1; value: root.initial_pan;
+            minimum: -1; maximum: 1; value <=> root.live_pan;
             changed(v) => { root.pan-changed(v); }
         }
 
@@ -346,7 +368,7 @@ export component FxReturnStrip inherits Rectangle {
                 alignment: center;
                 spacing: 4px;
                 VerticalFader {
-                    minimum: -60; maximum: 12; value: root.initial_gain_db;
+                    minimum: -60; maximum: 12; value <=> root.live_gain_db;
                     changed(v) => { root.gain-changed(v); }
                 }
                 MeterBar { peak: root.meter_peak; rms: root.meter_rms; }
@@ -354,9 +376,9 @@ export component FxReturnStrip inherits Rectangle {
         }
 
         Text {
-            text: "Gain (dB)";
-            font-size: 9px;
-            color: #8a8a90;
+            text: Math.round(root.live_gain_db * 10) / 10 + " dB";
+            font-size: 10px;
+            color: #d8d8dc;
             horizontal-alignment: center;
         }
 
@@ -381,6 +403,8 @@ export component MasterStrip inherits Rectangle {
 
     callback gain-changed(float);
     callback comp-edit-clicked();
+
+    property <float> live_gain_db: root.initial_gain_db;
 
     width: 140px;
     background: #1a1f1a;
@@ -408,7 +432,7 @@ export component MasterStrip inherits Rectangle {
                 alignment: center;
                 spacing: 4px;
                 VerticalFader {
-                    minimum: -60; maximum: 12; value: root.initial_gain_db;
+                    minimum: -60; maximum: 12; value <=> root.live_gain_db;
                     changed(v) => { root.gain-changed(v); }
                 }
                 MeterBar { peak: root.meter_peak_l; rms: root.meter_rms_l; }
@@ -418,9 +442,9 @@ export component MasterStrip inherits Rectangle {
         }
 
         Text {
-            text: "Gain (dB)";
-            font-size: 9px;
-            color: #8a8a90;
+            text: Math.round(root.live_gain_db * 10) / 10 + " dB";
+            font-size: 11px;
+            color: #d8d8dc;
             horizontal-alignment: center;
         }
 

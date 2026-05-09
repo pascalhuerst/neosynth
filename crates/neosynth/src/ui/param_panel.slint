@@ -1,7 +1,9 @@
-import { Slider, VerticalBox } from "std-widgets.slint";
+import { Slider, LineEdit, VerticalBox } from "std-widgets.slint";
 
 /// One row in a `ParamPanel`. Populated by Rust from each effect's
-/// `FloatParams::all()` declaration.
+/// `FloatParams::all()` declaration. The `value` field is read-write so
+/// the slider's two-way binding writes user drags back into the model —
+/// without that the popup re-renders with stale values when reopened.
 export struct FloatParam {
     label: string,
     minimum: float,
@@ -9,30 +11,53 @@ export struct FloatParam {
     value: float,
 }
 
-/// Generic effect-edit panel. Renders one labeled slider per entry in
-/// `float_params`. The model is set once at startup with each parameter's
-/// default value; user drags fire `float_changed(index, value)` for the host
-/// to translate into an `InputParameters` push.
+/// Generic effect-edit panel. Each row: label, slider, editable value.
+///
+///   * Slider drag: `value <=> p.value` keeps the model in sync, fires
+///     `float_changed(i, v)` for the host to push to the audio engine.
+///   * Text entry: typed value parsed on <Enter>, clamped to [min, max],
+///     applied identically to a slider drag. Useful for precise settings
+///     (e.g. exact 1:4 ratio, exact 5 ms attack).
 export component ParamPanel {
     in property <[FloatParam]> float_params;
     callback float_changed(int, float);
 
     VerticalBox {
-        spacing: 8px;
+        spacing: 6px;
         padding: 4px;
 
-        for p[i] in root.float_params: VerticalLayout {
-            spacing: 2px;
+        for p[i] in root.float_params: HorizontalLayout {
+            spacing: 8px;
             Text {
-                text: p.label + ": " + p.value;
-                font-size: 11px;
+                text: p.label;
+                width: 140px;
+                vertical-alignment: center;
                 color: #c8c8d0;
+                font-size: 11px;
             }
             Slider {
+                horizontal-stretch: 1;
                 minimum: p.minimum;
                 maximum: p.maximum;
                 value: p.value;
-                changed(v) => { root.float_changed(i, v); }
+                // Slint doesn't allow `value <=> p.value` for model rows, so
+                // we manually write back. Without this, reopening a popup
+                // resets to whatever value was last in the model (i.e. the
+                // values seeded at startup, since drags weren't persisted).
+                changed(v) => {
+                    p.value = v;
+                    root.float_changed(i, v);
+                }
+            }
+            LineEdit {
+                width: 80px;
+                horizontal-alignment: right;
+                font-size: 11px;
+                text: "\{Math.round(p.value * 100) / 100}";
+                accepted(t) => {
+                    p.value = clamp(t.to-float(), p.minimum, p.maximum);
+                    root.float_changed(i, p.value);
+                }
             }
         }
     }
