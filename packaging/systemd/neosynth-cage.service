@@ -5,6 +5,8 @@ Documentation=https://www.hjdskes.nl/projects/cage/
 After=systemd-user-sessions.service plymouth-quit.service sound.target getty@tty1.service
 Wants=sound.target
 Conflicts=getty@tty1.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
 Type=simple
@@ -43,7 +45,17 @@ LimitNICE=-20
 Environment=XDG_CONFIG_HOME=/var/lib
 StateDirectory=neosynth
 StateDirectoryMode=0750
-Environment=RUST_LOG=info
+
+# Override PAM's HOME (which points at /home/neosynth — a directory that
+# doesn't exist for our --no-create-home user). Mesa puts its shader cache
+# under $HOME/.cache, so without this each boot re-compiles shaders. With
+# HOME pointing at the StateDirectory, the cache survives reboots.
+Environment=HOME=/var/lib/neosynth
+Environment=XDG_CACHE_HOME=/var/lib/neosynth/cache
+
+# `sctk_adwaita=off` silences the harmless XDG Settings Portal timeout error
+# (cage doesn't run a portal — there's nothing to query).
+Environment=RUST_LOG=info,sctk_adwaita=off
 
 # Inhibit lid-suspend while the service runs, then launch cage with the
 # audio engine. cage replaces its child via fork+exec, so realtime caps and
@@ -54,6 +66,7 @@ ExecStart=/usr/bin/systemd-inhibit \
     --why="realtime audio engine running" \
     --mode=block \
     /usr/bin/cage -s -- \
+    /usr/bin/systemd-cat --identifier=neosynth --stderr-priority=info -- \
     /usr/sbin/neosynth \
         --input-device hw:0,0,0 \
         --output-device hw:0,0,0 \
@@ -66,8 +79,6 @@ ExecStart=/usr/bin/systemd-inhibit \
 
 Restart=on-failure
 RestartSec=2
-StartLimitBurst=5
-StartLimitIntervalSec=60
 
 [Install]
 WantedBy=multi-user.target
