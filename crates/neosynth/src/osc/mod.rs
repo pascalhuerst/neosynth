@@ -62,6 +62,7 @@ const RECV_TIMEOUT: Duration = Duration::from_millis(20);
 /// * `/meters/echo/peak`, `/meters/echo/rms`
 /// * `/meters/master/l/peak`, `/meters/master/l/rms`,
 ///    `/meters/master/r/peak`, `/meters/master/r/rms`
+/// * `/meters/compressor/gr_db`     f  (master compressor peak gain reduction)
 /// * `/telemetry/dsp_load`           f  (peak-hold percentage)
 /// * `/telemetry/xrun_overrun`       i  (cumulative count)
 /// * `/telemetry/xrun_underrun`      i  (cumulative count)
@@ -343,6 +344,12 @@ fn broadcast(
     content.push(make_msg("/meters/master/l/rms".into(), mlr));
     content.push(make_msg("/meters/master/r/peak".into(), mrp));
     content.push(make_msg("/meters/master/r/rms".into(), mrr));
+
+    // Master compressor gain reduction in dB (≥ 0; 0 = no compression).
+    content.push(make_msg(
+        "/meters/compressor/gr_db".into(),
+        meters.load_compressor_gr_db(),
+    ));
 
     content.push(make_msg(
         "/telemetry/dsp_load".into(),

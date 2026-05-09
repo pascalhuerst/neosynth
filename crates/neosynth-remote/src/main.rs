@@ -234,6 +234,15 @@ fn group_and_order(path: &str) -> (String, usize) {
             reverb_echo_order(rest, &["send", "fb_local", "fb_cross", "time_l_ms", "time_r_ms", "lpf_hz"]),
         );
     }
+    if let Some(rest) = path.strip_prefix("/compressor/") {
+        return (
+            "Compressor".into(),
+            reverb_echo_order(
+                rest,
+                &["threshold_db", "ratio", "attack_ms", "release_ms", "knee_db", "makeup_db"],
+            ),
+        );
+    }
     if let Some(rest) = path.strip_prefix("/mixer/master/") {
         return ("Master".into(), mixer_segment_order(rest));
     }
@@ -312,9 +321,10 @@ fn build_groups_model(
         match name {
             "Reverb" => 0,
             "Echo" => 1,
-            "Master" => 2,
-            "Reverb Return" => 3,
-            "Echo Return" => 4,
+            "Compressor" => 2,
+            "Master" => 3,
+            "Reverb Return" => 4,
+            "Echo Return" => 5,
             n if n.starts_with("Input ") => {
                 10 + n.trim_start_matches("Input ").parse::<usize>().unwrap_or(0)
             }

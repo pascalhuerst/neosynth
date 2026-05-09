@@ -41,6 +41,8 @@ export component MainWindow inherits Window {
     in-out property <float> master-rms-l: 0;
     in-out property <float> master-peak-r: 0;
     in-out property <float> master-rms-r: 0;
+    /// Master compressor peak gain reduction in dB (always ≥ 0).
+    in-out property <float> comp-gr-db: 0;
 
     /// Realtime audio thread load (% of period budget). 0 = idle, 100 = right
     /// at the limit, >100 = xrun is happening or imminent.
@@ -50,10 +52,12 @@ export component MainWindow inherits Window {
     // FloatParams::all() declaration.
     in-out property <[FloatParam]> reverb-params: [];
     in-out property <[FloatParam]> echo-params: [];
+    in-out property <[FloatParam]> compressor-params: [];
 
     // Generic per-effect callback: (param_index, new_value).
     callback reverb-param-changed(int, float);
     callback echo-param-changed(int, float);
+    callback compressor-param-changed(int, float);
 
     // Mixer — input strips
     callback input-gain-changed(int, float);
@@ -165,7 +169,9 @@ export component MainWindow inherits Window {
                     meter_peak_r: root.master-peak-r;
                     meter_rms_r: root.master-rms-r;
                     initial_gain_db: root.master-init-gain-db;
+                    comp_gr_db: root.comp-gr-db;
                     gain-changed(v) => { root.master-gain-changed(v); }
+                    comp-edit-clicked => { compressor-popup.show(); }
                 }
             }
         }
@@ -252,6 +258,55 @@ export component MainWindow inherits Window {
                 ParamPanel {
                     float_params: root.echo-params;
                     float_changed(idx, v) => { root.echo-param-changed(idx, v); }
+                }
+            }
+        }
+    }
+
+    compressor-popup := PopupWindow {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: 460px;
+        height: 460px;
+        close-policy: no-auto-close;
+
+        Rectangle {
+            background: #16161a;
+            border-color: #2b2b30;
+            border-width: 1px;
+            border-radius: 6px;
+
+            VerticalBox {
+                padding: 12px;
+                spacing: 8px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: "Compressor (Master)";
+                        font-size: 18px;
+                        font-weight: 700;
+                        color: #d8d8dc;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "GR -" + Math.round(root.comp-gr-db * 10) / 10 + " dB";
+                        font-size: 13px;
+                        color: root.comp-gr-db > 0.1 ? #d6c060 : #707078;
+                        vertical-alignment: center;
+                    }
+                    Button {
+                        text: "Close";
+                        clicked => { compressor-popup.close(); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: #2b2b30; }
+
+                ParamPanel {
+                    float_params: root.compressor-params;
+                    float_changed(idx, v) => { root.compressor-param-changed(idx, v); }
                 }
             }
         }

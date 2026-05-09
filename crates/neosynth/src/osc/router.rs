@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use rosc::OscType;
 
 use crate::audio::InputParameters;
+use crate::dsp::compressor::CompressorParamKind;
 use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::{self, MixerBoolId, MixerFloatId, MixerParamId};
 use crate::dsp::param::FloatParams;
@@ -35,6 +36,7 @@ pub enum OscParamKind {
 enum RouteTarget {
     Reverb(ReverbParamKind),
     Echo(EchoParamKind),
+    Compressor(CompressorParamKind),
     MixerFloat(MixerFloatId),
     MixerBool(MixerBoolId),
 }
@@ -52,9 +54,14 @@ impl OscRouter {
         let mut routes: HashMap<String, RouteTarget> = HashMap::new();
         let mut introspection: Vec<OscParameter> = Vec::new();
 
-        // Reverb / Echo float params (auto-derived via FloatParams trait)
+        // Effect float params (auto-derived via FloatParams trait)
         push_effect::<ReverbParamKind, _>(&mut routes, &mut introspection, RouteTarget::Reverb);
         push_effect::<EchoParamKind, _>(&mut routes, &mut introspection, RouteTarget::Echo);
+        push_effect::<CompressorParamKind, _>(
+            &mut routes,
+            &mut introspection,
+            RouteTarget::Compressor,
+        );
 
         // Mixer params — special-cased because they use indexed paths and split float/bool
         for id in mixer::default_param_order(num_inputs) {
@@ -101,6 +108,10 @@ impl OscRouter {
                 let v = first_float(args)?;
                 Some(InputParameters::Echo(k.build(v as f64)))
             }
+            RouteTarget::Compressor(k) => {
+                let v = first_float(args)?;
+                Some(InputParameters::Compressor(k.build(v as f64)))
+            }
             RouteTarget::MixerFloat(f) => {
                 let v = first_float(args)?;
                 Some(InputParameters::Mixer(f.build(v as f64)))
@@ -123,6 +134,7 @@ impl OscRouter {
         match target {
             RouteTarget::Reverb(k) => Some(OscValue::Float(k.read(&state.reverb) as f32)),
             RouteTarget::Echo(k) => Some(OscValue::Float(k.read(&state.echo) as f32)),
+            RouteTarget::Compressor(k) => Some(OscValue::Float(k.read(&state.compressor) as f32)),
             RouteTarget::MixerFloat(f) => f.read(&state.mixer).map(OscValue::Float),
             RouteTarget::MixerBool(b) => b.read(&state.mixer).map(OscValue::Bool),
         }

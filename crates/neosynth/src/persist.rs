@@ -8,6 +8,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crate::audio::InputParameters;
+use crate::dsp::compressor::{CompressorParam, CompressorParams};
 use crate::dsp::echo::{EchoParam, EchoParams};
 use crate::dsp::mixer::MixerParam;
 use crate::dsp::param::FloatParams;
@@ -28,6 +29,7 @@ pub struct AppState {
     pub mixer: MixerSnapshot,
     pub reverb: ReverbParams,
     pub echo: EchoParams,
+    pub compressor: CompressorParams,
 }
 
 impl Default for AppState {
@@ -37,6 +39,7 @@ impl Default for AppState {
             mixer: MixerSnapshot::default(),
             reverb: ReverbParams::default(),
             echo: EchoParams::default(),
+            compressor: CompressorParams::default(),
         }
     }
 }
@@ -49,6 +52,7 @@ impl AppState {
             InputParameters::Reverb(p) => apply_reverb(p, &mut self.reverb),
             InputParameters::Echo(p) => apply_echo(p, &mut self.echo),
             InputParameters::Mixer(p) => self.mixer.apply(p),
+            InputParameters::Compressor(p) => apply_compressor(p, &mut self.compressor),
         }
     }
 
@@ -63,6 +67,7 @@ impl AppState {
     /// Generate the full sequence of parameter events that, when consumed by
     /// the audio thread, will reproduce this state. Used at startup.
     pub fn replay_events(&self) -> Vec<InputParameters> {
+        use crate::dsp::compressor::CompressorParamKind;
         use crate::dsp::echo::EchoParamKind;
         use crate::dsp::reverb::ReverbParamKind;
 
@@ -75,6 +80,10 @@ impl AppState {
         for &id in EchoParamKind::all() {
             let v = id.read(&self.echo);
             out.push(InputParameters::Echo(id.build(v)));
+        }
+        for &id in CompressorParamKind::all() {
+            let v = id.read(&self.compressor);
+            out.push(InputParameters::Compressor(id.build(v)));
         }
 
         for (i, s) in self.mixer.inputs.iter().enumerate() {
@@ -290,6 +299,17 @@ fn apply_echo(p: EchoParam, s: &mut EchoParams) {
         EchoParam::TimeLMs(v) => s.time_l_ms = v as f32,
         EchoParam::TimeRMs(v) => s.time_r_ms = v as f32,
         EchoParam::LpfHz(v) => s.lpf_hz = v as f32,
+    }
+}
+
+fn apply_compressor(p: CompressorParam, s: &mut CompressorParams) {
+    match p {
+        CompressorParam::ThresholdDb(v) => s.threshold_db = v as f32,
+        CompressorParam::Ratio(v) => s.ratio = v as f32,
+        CompressorParam::AttackMs(v) => s.attack_ms = v as f32,
+        CompressorParam::ReleaseMs(v) => s.release_ms = v as f32,
+        CompressorParam::KneeDb(v) => s.knee_db = v as f32,
+        CompressorParam::MakeupDb(v) => s.makeup_db = v as f32,
     }
 }
 

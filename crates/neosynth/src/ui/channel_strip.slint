@@ -276,10 +276,14 @@ export component MasterStrip inherits Rectangle {
     in-out property <float> meter_peak_r: 0.0;
     in-out property <float> meter_rms_l: 0.0;
     in-out property <float> meter_rms_r: 0.0;
+    /// Master-bus compressor gain reduction in dB (always ≥ 0). 0 = no
+    /// compression. Drives the small horizontal "GR" bar at the bottom.
+    in-out property <float> comp_gr_db: 0.0;
 
     in property <float> initial_gain_db: 0;
 
     callback gain-changed(float);
+    callback comp-edit-clicked();
 
     width: 140px;
     background: #1a1f1a;
@@ -321,6 +325,62 @@ export component MasterStrip inherits Rectangle {
             font-size: 9px;
             color: #8a8a90;
             horizontal-alignment: center;
+        }
+
+        Rectangle { height: 1px; background: #2f3a2f; }
+
+        // Master compressor strip — GR meter + edit button. The bar grows
+        // right-to-left because GR is a reduction (more compression = bar
+        // extends further from the right edge).
+        VerticalLayout {
+            spacing: 3px;
+            HorizontalLayout {
+                spacing: 4px;
+                Text {
+                    text: "Comp";
+                    font-size: 10px;
+                    color: #c8d8c8;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "-" + Math.round(root.comp_gr_db * 10) / 10 + " dB";
+                    font-size: 10px;
+                    color: root.comp_gr_db > 0.1 ? #d6c060 : #707078;
+                    vertical-alignment: center;
+                }
+            }
+            Rectangle {
+                height: 6px;
+                background: #16201a;
+                border-radius: 2px;
+                Rectangle {
+                    // 12 dB GR fills the entire bar.
+                    property <float> norm: clamp(root.comp_gr_db / 12, 0, 1);
+                    x: parent.width * (1 - norm);
+                    width: parent.width * norm;
+                    height: parent.height;
+                    background: #d6c060;
+                    border-radius: 2px;
+                }
+            }
+            edit_btn := TouchArea {
+                height: 22px;
+                Rectangle {
+                    background: edit_btn.pressed ? #2a3a2a : (edit_btn.has-hover ? #243024 : #1f2a1f);
+                    border-color: #3a4a3a;
+                    border-width: 1px;
+                    border-radius: 3px;
+                    Text {
+                        text: "Edit";
+                        font-size: 10px;
+                        color: #c8d8c8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                clicked => { root.comp-edit-clicked(); }
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 use crate::audio::{
     EngineTelemetry, InputParameterRingBufferProducer, InputParameters, MetersOutput,
 };
+use crate::dsp::compressor::CompressorParamKind;
 use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::MixerParam;
 use crate::dsp::param::FloatParams;
@@ -122,6 +123,9 @@ pub fn run(
     ui.set_echo_params(ModelRc::new(VecModel::from(
         build_float_param_model::<EchoParamKind>(&loaded.echo),
     )));
+    ui.set_compressor_params(ModelRc::new(VecModel::from(
+        build_float_param_model::<CompressorParamKind>(&loaded.compressor),
+    )));
 
     // Input strip initial values (one entry per strip).
     let input_init: Vec<InputStripInit> = loaded
@@ -202,6 +206,14 @@ pub fn run(
         ui.on_echo_param_changed(move |idx: i32, v: f32| {
             if let Some(&kind) = EchoParamKind::all().get(idx as usize) {
                 push(InputParameters::Echo(kind.build(v as f64)));
+            }
+        });
+    }
+    {
+        let push = push.clone();
+        ui.on_compressor_param_changed(move |idx: i32, v: f32| {
+            if let Some(&kind) = CompressorParamKind::all().get(idx as usize) {
+                push(InputParameters::Compressor(kind.build(v as f64)));
             }
         });
     }
@@ -309,6 +321,8 @@ pub fn run(
                 ui.set_master_rms_l(linear_to_pos(d.master_l.rms));
                 ui.set_master_peak_r(linear_to_pos(d.master_r.peak));
                 ui.set_master_rms_r(linear_to_pos(d.master_r.rms));
+
+                ui.set_comp_gr_db(meters.load_compressor_gr_db());
             },
         );
     }

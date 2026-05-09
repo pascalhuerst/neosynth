@@ -1,4 +1,5 @@
 use crate::audio::InputParameters;
+use crate::dsp::compressor::CompressorParamKind;
 use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::{self, MixerBoolId, MixerFloatId, MixerParamId};
 use crate::dsp::param::{FloatCurve, FloatParams};
@@ -13,6 +14,7 @@ use crate::dsp::reverb::ReverbParamKind;
 pub enum FloatTarget {
     Reverb(ReverbParamKind),
     Echo(EchoParamKind),
+    Compressor(CompressorParamKind),
     Mixer(MixerFloatId),
 }
 
@@ -21,6 +23,7 @@ impl FloatTarget {
         match self {
             Self::Reverb(id) => InputParameters::Reverb(id.build(v)),
             Self::Echo(id) => InputParameters::Echo(id.build(v)),
+            Self::Compressor(id) => InputParameters::Compressor(id.build(v)),
             Self::Mixer(id) => InputParameters::Mixer(id.build(v)),
         }
     }
@@ -101,6 +104,12 @@ pub fn default_mapping(num_inputs: usize) -> Vec<CcBinding> {
 
     append_float_params::<ReverbParamKind, _>(&mut bindings, &mut cc_num, channel, FloatTarget::Reverb);
     append_float_params::<EchoParamKind, _>(&mut bindings, &mut cc_num, channel, FloatTarget::Echo);
+    append_float_params::<CompressorParamKind, _>(
+        &mut bindings,
+        &mut cc_num,
+        channel,
+        FloatTarget::Compressor,
+    );
 
     bindings
 }

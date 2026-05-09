@@ -41,6 +41,9 @@ pub struct MetersOutput {
     echo: MeterCell,
     master_l: MeterCell,
     master_r: MeterCell,
+    /// Master compressor peak gain reduction in dB (always ≥ 0). Single
+    /// value (no peak/rms split) so it gets a bare atomic, not a `MeterCell`.
+    compressor_gr_db: AtomicU32,
 }
 
 impl MetersOutput {
@@ -51,11 +54,23 @@ impl MetersOutput {
             echo: MeterCell::new(),
             master_l: MeterCell::new(),
             master_r: MeterCell::new(),
+            compressor_gr_db: AtomicU32::new(0),
         }
     }
 
     pub fn num_inputs(&self) -> usize {
         self.inputs.len()
+    }
+
+    #[inline]
+    pub fn store_compressor_gr_db(&self, gr_db: f32) {
+        self.compressor_gr_db
+            .store(gr_db.to_bits(), Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn load_compressor_gr_db(&self) -> f32 {
+        f32::from_bits(self.compressor_gr_db.load(Ordering::Relaxed))
     }
 
     #[inline]
