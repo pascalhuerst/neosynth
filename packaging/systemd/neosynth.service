@@ -5,7 +5,17 @@ Wants=sound.target
 
 [Service]
 Type=simple
-ExecStart=/usr/sbin/neosynth \
+# `systemd-inhibit` holds locks on "handle-lid-switch" and "sleep" for the
+# lifetime of the wrapped neosynth process — closing the lid won't suspend the
+# machine while audio is running. The locks are released the moment neosynth
+# exits, so normal laptop suspend behaviour resumes when the service stops.
+# Inspect active locks with: loginctl list-inhibitors
+ExecStart=/usr/bin/systemd-inhibit \
+    --what=handle-lid-switch:sleep \
+    --who=neosynth \
+    --why="realtime audio engine running" \
+    --mode=block \
+    /usr/sbin/neosynth \
     --input-device hw:0,0,0 \
     --output-device hw:0,0,0 \
     --sample-rate 48000 \
