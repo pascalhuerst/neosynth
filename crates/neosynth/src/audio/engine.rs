@@ -5,7 +5,6 @@ use super::meters::MetersOutput;
 use super::sample_format::SampleFormat;
 use super::telemetry::EngineTelemetry;
 use super::worker_thread::start_worker_thread;
-use super::xrun::XrunEventsProducer;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -73,7 +72,6 @@ impl Engine {
         osc_params: InputParameterRingBufferConsumer,
         meters: Arc<MetersOutput>,
         telemetry: Arc<EngineTelemetry>,
-        xrun_producer: XrunEventsProducer,
         audio_cpu: usize,
         worker_cpu: usize,
     ) -> Result<AudioHandles> {
@@ -131,7 +129,6 @@ impl Engine {
             in_channel.producer,
             out_channel.consumer,
             telemetry,
-            xrun_producer,
             running,
         );
 

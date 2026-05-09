@@ -1,8 +1,6 @@
 use crate::audio::{
     EngineTelemetry, InputParameterRingBufferProducer, InputParameters, MetersOutput,
-    XrunEventsConsumer,
 };
-use ringbuf::traits::Consumer as RbConsumer;
 use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::MixerParam;
 use crate::dsp::param::FloatParams;
@@ -98,7 +96,6 @@ pub fn run(
     num_inputs: usize,
     meters: Arc<MetersOutput>,
     telemetry: Arc<EngineTelemetry>,
-    xrun_consumer: XrunEventsConsumer,
     persisted: Arc<Mutex<PersistableState>>,
     loaded: AppState,
 ) -> Result<()> {
@@ -249,7 +246,8 @@ pub fn run(
         master_r: MeterDisplay::default(),
     }));
 
-    let xrun_consumer = Rc::new(RefCell::new(xrun_consumer));
+    let prev_overrun = Rc::new(RefCell::new(0u32));
+    let prev_underrun = Rc::new(RefCell::new(0u32));
     let meter_timer = slint::Timer::default();
     {
         let ui_weak = ui.as_weak();
@@ -258,7 +256,8 @@ pub fn run(
         let input_peaks = input_peaks_model.clone();
         let input_rms = input_rms_model.clone();
         let displays = displays.clone();
-        let xrun_consumer = xrun_consumer.clone();
+        let prev_overrun = prev_overrun.clone();
+        let prev_underrun = prev_underrun.clone();
         meter_timer.start(
             slint::TimerMode::Repeated,
             Duration::from_millis(METER_TICK_MS),
@@ -269,13 +268,20 @@ pub fn run(
                 let mut d = displays.borrow_mut();
                 ui.set_dsp_load_pct(telemetry.dsp_load_peak_pct());
 
-                // Drain xrun events. For now, log via tracing — a visible UI
-                // indicator can come later if needed.
-                {
-                    let mut c = xrun_consumer.borrow_mut();
-                    while let Some(ev) = c.try_pop() {
-                        tracing::warn!("xrun: {:?} at t={}us", ev.kind, ev.timestamp_us);
-                    }
+                // xrun delta detection — log when the cumulative counters
+                // advance. Tracing in the audio thread already emits the
+                // immediate warning; this is the UI-visible counterpart.
+                let or = telemetry.overrun_count();
+                let ur = telemetry.underrun_count();
+                let mut p_or = prev_overrun.borrow_mut();
+                let mut p_ur = prev_underrun.borrow_mut();
+                if or != *p_or {
+                    tracing::warn!("xrun overrun (cumulative {})", or);
+                    *p_or = or;
+                }
+                if ur != *p_ur {
+                    tracing::warn!("xrun underrun (cumulative {})", ur);
+                    *p_ur = ur;
                 }
 
                 let n = meters.num_inputs().min(input_peaks.row_count());

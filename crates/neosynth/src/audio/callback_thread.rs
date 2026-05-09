@@ -3,7 +3,6 @@ use super::high_res_timer::{cpu_usage, get_ticks_in_microseconds};
 use super::realtime::{prioritize_thread, set_thread_affinity};
 use super::sample_format::SampleFormat;
 use super::telemetry::EngineTelemetry;
-use super::xrun::{XrunEvent, XrunEventsProducer, XrunKind};
 
 use anyhow::Result;
 use ringbuf::traits::*;
@@ -35,14 +34,13 @@ pub fn start_callback_thread(
     audio_in_producer: SamplesRingBufferProducer,
     audio_out_consumer: SamplesRingBufferConsumer,
     telemetry: Arc<EngineTelemetry>,
-    xrun_producer: XrunEventsProducer,
     running: Arc<AtomicBool>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         set_thread_affinity(cfg.audio_cpu);
         prioritize_thread();
 
-        if let Err(e) = run_callback_loop(cfg, audio_in_producer, audio_out_consumer, telemetry, xrun_producer, &running) {
+        if let Err(e) = run_callback_loop(cfg, audio_in_producer, audio_out_consumer, telemetry, &running) {
             tracing::error!("Callback thread error: {}", e);
         }
         tracing::info!("Callback thread stopped");
@@ -54,7 +52,6 @@ fn run_callback_loop(
     mut audio_in: SamplesRingBufferProducer,
     mut audio_out: SamplesRingBufferConsumer,
     telemetry: Arc<EngineTelemetry>,
-    mut xrun_producer: XrunEventsProducer,
     running: &AtomicBool,
 ) -> Result<()> {
     let CallbackThreadConfig {
@@ -140,7 +137,7 @@ fn run_callback_loop(
             Ok(_) => {}
             Err(e) if e.errno() == libc::EPIPE => {
                 tracing::warn!("Capture overrun, recovering");
-                push_xrun(&mut xrun_producer, XrunKind::Overrun);
+                telemetry.increment_overrun();
                 if input_pcm.try_recover(e, true).is_err() {
                     input_pcm.prepare()?;
                     input_pcm.start()?;
@@ -197,7 +194,7 @@ fn run_callback_loop(
             Ok(_) => {}
             Err(e) if e.errno() == libc::EPIPE => {
                 tracing::warn!("Playback underrun, recovering");
-                push_xrun(&mut xrun_producer, XrunKind::Underrun);
+                telemetry.increment_underrun();
                 if output_pcm.try_recover(e, true).is_err() {
                     output_pcm.drain().ok();
                     output_pcm.prepare()?;
@@ -210,12 +207,4 @@ fn run_callback_loop(
     }
 
     Ok(())
-}
-
-#[inline]
-fn push_xrun(producer: &mut XrunEventsProducer, kind: XrunKind) {
-    let _ = producer.try_push(XrunEvent {
-        kind,
-        timestamp_us: get_ticks_in_microseconds(),
-    });
 }

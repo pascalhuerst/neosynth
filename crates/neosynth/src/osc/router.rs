@@ -7,6 +7,15 @@ use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::{self, MixerBoolId, MixerFloatId, MixerParamId};
 use crate::dsp::param::FloatParams;
 use crate::dsp::reverb::ReverbParamKind;
+use crate::persist::AppState;
+
+/// Current value of an OSC-addressable parameter, returned by
+/// `OscRouter::current_value`. Used by the `/get_all` reply.
+#[derive(Debug, Clone, Copy)]
+pub enum OscValue {
+    Float(f32),
+    Bool(bool),
+}
 
 /// One known OSC-addressable parameter (after path expansion).
 #[derive(Debug, Clone)]
@@ -105,6 +114,18 @@ impl OscRouter {
 
     pub fn introspection(&self) -> &[OscParameter] {
         &self.introspection
+    }
+
+    /// Look up a parameter's current value out of `state`. Used to answer the
+    /// `/get_all` query so a freshly-connected remote can sync.
+    pub fn current_value(&self, addr: &str, state: &AppState) -> Option<OscValue> {
+        let target = self.routes.get(addr)?;
+        match target {
+            RouteTarget::Reverb(k) => Some(OscValue::Float(k.read(&state.reverb) as f32)),
+            RouteTarget::Echo(k) => Some(OscValue::Float(k.read(&state.echo) as f32)),
+            RouteTarget::MixerFloat(f) => f.read(&state.mixer).map(OscValue::Float),
+            RouteTarget::MixerBool(b) => b.read(&state.mixer).map(OscValue::Bool),
+        }
     }
 }
 

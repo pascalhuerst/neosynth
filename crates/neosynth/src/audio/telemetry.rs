@@ -25,6 +25,12 @@ pub struct EngineTelemetry {
     /// Non-positive values are treated as "unset" (only finite, non-negative
     /// numbers are stored, so the 0-bit pattern doubles as the empty marker).
     dsp_load_max_pct: AtomicU32,
+    /// Cumulative xrun counts. Multiple consumers (UI tick + OSC broadcast)
+    /// can read independently; both compare against a previously-seen value
+    /// to detect new events. Switched from a queued-event channel because
+    /// queues are SPSC and we want N readers.
+    overrun_count: AtomicU32,
+    underrun_count: AtomicU32,
 }
 
 impl EngineTelemetry {
@@ -33,7 +39,29 @@ impl EngineTelemetry {
             dsp_load_pct: AtomicU32::new(0),
             dsp_load_peak_pct: AtomicU32::new(0),
             dsp_load_max_pct: AtomicU32::new(0),
+            overrun_count: AtomicU32::new(0),
+            underrun_count: AtomicU32::new(0),
         }
+    }
+
+    #[inline]
+    pub fn increment_overrun(&self) {
+        self.overrun_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn increment_underrun(&self) {
+        self.underrun_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn overrun_count(&self) -> u32 {
+        self.overrun_count.load(Ordering::Relaxed)
+    }
+
+    #[inline]
+    pub fn underrun_count(&self) -> u32 {
+        self.underrun_count.load(Ordering::Relaxed)
     }
 
     #[inline]

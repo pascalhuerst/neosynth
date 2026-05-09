@@ -19,7 +19,6 @@ use persist::{AppState, PersistableState, default_state_path, spawn_persister};
 const PARAM_CHANNEL_CAPACITY: usize = 1024;
 const MIDI_CHANNEL_CAPACITY: usize = 256;
 const OSC_CHANNEL_CAPACITY: usize = 256;
-const XRUN_CHANNEL_CAPACITY: usize = 64;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "neosynth realtime audio engine")]
@@ -90,24 +89,6 @@ fn wait_for_shutdown(running: &AtomicBool) {
     while running.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(100));
     }
-}
-
-/// Drain xrun events emitted by the callback thread and log them. Only used
-/// in headless mode; the UI has its own consumer.
-fn spawn_headless_xrun_logger(
-    running: Arc<AtomicBool>,
-    consumer: audio::XrunEventsConsumer,
-) -> std::thread::JoinHandle<()> {
-    use ringbuf::traits::Consumer;
-    std::thread::spawn(move || {
-        let mut consumer = consumer;
-        while running.load(Ordering::Relaxed) {
-            while let Some(ev) = consumer.try_pop() {
-                tracing::warn!("xrun: {:?} at t={}us", ev.kind, ev.timestamp_us);
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-    })
 }
 
 /// Periodically log the peak DSP load measured since the last tick. Only used
@@ -186,7 +167,6 @@ fn main() -> Result<()> {
     let osc_params = audio::create_parameter_channel(OSC_CHANNEL_CAPACITY);
     let meters = Arc::new(audio::MetersOutput::new(cli.input_channels as usize));
     let telemetry = Arc::new(audio::EngineTelemetry::new());
-    let xrun_channel = audio::create_xrun_channel(XRUN_CHANNEL_CAPACITY);
 
     // ----- Engine -----
     let mut engine = audio::Engine::new(cli.input_device, cli.output_device, cli.sample_rate);
@@ -206,7 +186,6 @@ fn main() -> Result<()> {
         osc_params.consumer,
         meters.clone(),
         telemetry.clone(),
-        xrun_channel.producer,
         cli.audio_cpu,
         cli.worker_cpu,
     )?;
@@ -251,6 +230,8 @@ fn main() -> Result<()> {
             running.clone(),
             osc_params.producer,
             persisted.clone(),
+            meters.clone(),
+            telemetry.clone(),
             addr,
             cli.input_channels as usize,
         ) {
@@ -281,10 +262,8 @@ fn main() -> Result<()> {
             telemetry.clone(),
             HEADLESS_LOAD_LOG_INTERVAL,
         );
-        let xrun_logger = spawn_headless_xrun_logger(running.clone(), xrun_channel.consumer);
         wait_for_shutdown(&running);
         let _ = load_logger.join();
-        let _ = xrun_logger.join();
     } else {
         ui::run(
             ui_producer,
@@ -292,7 +271,6 @@ fn main() -> Result<()> {
             cli.input_channels as usize,
             meters,
             telemetry,
-            xrun_channel.consumer,
             persisted.clone(),
             loaded_state,
         )?;

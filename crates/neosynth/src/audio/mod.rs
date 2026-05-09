@@ -9,7 +9,6 @@ mod realtime;
 mod sample_format;
 mod telemetry;
 mod worker_thread;
-mod xrun;
 
 pub use channels::{InputParameterRingBufferProducer, create_parameter_channel};
 pub use engine::*;
@@ -17,4 +16,3 @@ pub use meters::MetersOutput;
 pub use parameters::*;
 pub use sample_format::SampleFormat;
 pub use telemetry::EngineTelemetry;
-pub use xrun::{XrunEventsConsumer, create_xrun_channel};

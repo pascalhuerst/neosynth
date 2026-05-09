@@ -125,6 +125,22 @@ impl MixerFloatId {
         0.0
     }
 
+    /// Read this parameter's current value out of a `MixerSnapshot`. Returns
+    /// `None` if the indexed strip doesn't exist.
+    pub fn read(self, snap: &crate::persist::MixerSnapshot) -> Option<f32> {
+        match self {
+            Self::InputGainDb(i) => snap.inputs.get(i).map(|s| s.gain_db),
+            Self::InputPan(i) => snap.inputs.get(i).map(|s| s.pan),
+            Self::InputSendReverb(i) => snap.inputs.get(i).map(|s| s.send_reverb),
+            Self::InputSendEcho(i) => snap.inputs.get(i).map(|s| s.send_echo),
+            Self::ReverbReturnGainDb => Some(snap.reverb_return.gain_db),
+            Self::ReverbReturnPan => Some(snap.reverb_return.pan),
+            Self::EchoReturnGainDb => Some(snap.echo_return.gain_db),
+            Self::EchoReturnPan => Some(snap.echo_return.pan),
+            Self::MasterGainDb => Some(snap.master_gain_db),
+        }
+    }
+
     /// Full OSC address for this mixer parameter.
     pub fn osc_path(self) -> String {
         match self {
@@ -162,6 +178,15 @@ impl MixerBoolId {
 
     pub fn default_value(self) -> bool {
         false
+    }
+
+    pub fn read(self, snap: &crate::persist::MixerSnapshot) -> Option<bool> {
+        match self {
+            Self::InputMute(i) => snap.inputs.get(i).map(|s| s.mute),
+            Self::InputSendPreFader(i) => snap.inputs.get(i).map(|s| s.send_pre_fader),
+            Self::ReverbReturnMute => Some(snap.reverb_return.mute),
+            Self::EchoReturnMute => Some(snap.echo_return.mute),
+        }
     }
 
     pub fn osc_path(self) -> String {

@@ -1,0 +1,124 @@
+import { ScrollView, VerticalBox, HorizontalBox, GroupBox, Slider, CheckBox } from "std-widgets.slint";
+
+export struct ParamRow {
+    path: string,
+    // 0 = float, 1 = bool
+    kind: int,
+    label: string,
+    min: float,
+    max: float,
+    float-value: float,
+    bool-value: bool,
+}
+
+export struct GroupRow {
+    title: string,
+    params: [ParamRow],
+}
+
+export component MainWindow inherits Window {
+    title: "neosynth-remote";
+    preferred-width: 700px;
+    preferred-height: 760px;
+    background: #16161a;
+
+    in-out property <[GroupRow]> groups: [];
+    in-out property <string> connection-status: "Connecting...";
+    in-out property <float> dsp-load-pct: 0;
+    in-out property <int> overrun-count: 0;
+    in-out property <int> underrun-count: 0;
+
+    callback float-changed(string, float);
+    callback bool-changed(string, bool);
+
+    VerticalBox {
+        padding: 10px;
+        spacing: 8px;
+
+        // Status bar
+        HorizontalBox {
+            spacing: 12px;
+            Text {
+                text: root.connection-status;
+                color: #d8d8dc;
+                font-size: 12px;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "DSP " + Math.round(root.dsp-load-pct * 10) / 10 + " %";
+                color: root.dsp-load-pct > 80 ? #ff7070 : root.dsp-load-pct > 50 ? #d6c060 : #a0c0a0;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "xrun  ovr " + root.overrun-count + "  und " + root.underrun-count;
+                color: (root.overrun-count + root.underrun-count) > 0 ? #ff8080 : #707078;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle { height: 1px; background: #2b2b30; }
+
+        ScrollView {
+            VerticalLayout {
+                spacing: 6px;
+
+                for group in root.groups: Rectangle {
+                    background: #1c1c20;
+                    border-radius: 4px;
+                    border-color: #2b2b30;
+                    border-width: 1px;
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 4px;
+                        Text {
+                            text: group.title;
+                            color: #d8d8dc;
+                            font-size: 13px;
+                            font-weight: 700;
+                        }
+                        Rectangle { height: 1px; background: #2b2b30; }
+                        for param[i] in group.params: HorizontalLayout {
+                            spacing: 8px;
+                            padding-top: 2px;
+                            padding-bottom: 2px;
+                            Text {
+                                text: param.label;
+                                color: #b8b8be;
+                                width: 180px;
+                                vertical-alignment: center;
+                                font-size: 12px;
+                            }
+                            if param.kind == 0: Slider {
+                                horizontal-stretch: 1;
+                                minimum: param.min;
+                                maximum: param.max;
+                                value: param.float-value;
+                                changed(v) => {
+                                    root.float-changed(param.path, v);
+                                }
+                            }
+                            if param.kind == 0: Text {
+                                text: Math.round(param.float-value * 100) / 100;
+                                color: #909098;
+                                width: 70px;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                                font-size: 11px;
+                            }
+                            if param.kind == 1: CheckBox {
+                                checked: param.bool-value;
+                                horizontal-stretch: 1;
+                                toggled => {
+                                    root.bool-changed(param.path, self.checked);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
