@@ -10,9 +10,11 @@ mod sample_format;
 mod telemetry;
 mod worker_thread;
 
+pub use audio_devices::{AlsaSettings, configure_audio_devices};
 pub use channels::{InputParameterRingBufferProducer, create_parameter_channel};
 pub use engine::*;
 pub use meters::MetersOutput;
 pub use parameters::*;
+pub use realtime::{prioritize_thread, set_thread_affinity};
 pub use sample_format::SampleFormat;
 pub use telemetry::EngineTelemetry;

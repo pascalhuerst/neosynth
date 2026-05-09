@@ -49,9 +49,98 @@ component DbScale {
     Text { x: 0; y: parent.height * 0.80 - 4px; text: "-48"; font-size: 8px; color: #8a8a90; }
 }
 
+/// Horizontal fader for parameters symmetric around 0 (pan, balance, …).
+/// Visual cues so the user knows the value is bipolar:
+///   * Center tick mark on the track
+///   * Fill bar grows from the center toward the thumb (left or right)
+///   * Snap-to-zero detent within ~3 % of midrange
+///   * Double-click resets to 0 (matches the gain fader convention)
+component HorizontalBipolarFader {
+    in property <float> minimum: -1;
+    in property <float> maximum: 1;
+    in-out property <float> value: 0;
+    callback changed(float);
+
+    height: 18px;
+    min-width: 60px;
+
+    property <float> norm: clamp((root.value - root.minimum) / (root.maximum - root.minimum), 0, 1);
+    property <length> thumb-x: root.width * norm;
+    property <length> center-x: root.width / 2;
+
+    // Track
+    Rectangle {
+        x: 0;
+        y: (parent.height - self.height) / 2;
+        width: parent.width;
+        height: 4px;
+        background: #333;
+        border-radius: 2px;
+    }
+
+    // Fill from center toward the thumb
+    Rectangle {
+        x: min(center-x, thumb-x);
+        y: (parent.height - self.height) / 2;
+        width: abs(thumb-x - center-x);
+        height: 4px;
+        background: #6e8aa8;
+        border-radius: 2px;
+    }
+
+    // Center tick
+    Rectangle {
+        x: center-x - 1px;
+        y: (parent.height - self.height) / 2;
+        width: 2px;
+        height: 10px;
+        background: #5a5a60;
+    }
+
+    // Thumb
+    Rectangle {
+        x: thumb-x - self.width / 2;
+        y: 0;
+        width: 12px;
+        height: parent.height;
+        background: #c8c8d0;
+        border-color: #2b2b30;
+        border-width: 1px;
+        border-radius: 3px;
+    }
+
+    touch := TouchArea {
+        property <float> drag-frac: clamp(self.mouse-x / parent.width, 0, 1);
+        property <float> raw: root.minimum + drag-frac * (root.maximum - root.minimum);
+        // Snap to 0 within ~3 % of full range — tactile center detent.
+        property <float> snap-tol: (root.maximum - root.minimum) * 0.03;
+        property <float> snapped: abs(raw) < snap-tol ? 0 : raw;
+
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down || self.pressed) {
+                root.value = snapped;
+                root.changed(snapped);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.value = snapped;
+                root.changed(snapped);
+            }
+        }
+        double-clicked => {
+            root.value = 0;
+            root.changed(0);
+        }
+    }
+}
+
 component VerticalFader {
     in property <float> minimum: -60;
     in property <float> maximum: 12;
+    /// Value the fader snaps back to on double-click. 0 dB by default — the
+    /// natural unity-gain reset position for the gain faders that use this.
+    in property <float> reset-value: 0;
     in-out property <float> value: 0;
     callback changed(float);
 
@@ -95,6 +184,14 @@ component VerticalFader {
                 root.value = root.minimum + self.drag-frac * (root.maximum - root.minimum);
                 root.changed(root.value);
             }
+        }
+
+        // Double-click → snap to reset-value (0 dB). The two preceding `down`
+        // events will have already set value to the click position, so the
+        // sequence ends with the reset value, which is what the user wants.
+        double-clicked => {
+            root.value = root.reset-value;
+            root.changed(root.value);
         }
     }
 }
@@ -161,7 +258,7 @@ export component InputChannelStrip inherits Rectangle {
         Rectangle { height: 1px; background: #2b2b30; }
 
         Text { text: "Pan"; font-size: 9px; color: #8a8a90; }
-        Slider {
+        HorizontalBipolarFader {
             minimum: -1; maximum: 1; value: root.initial_pan;
             changed(v) => { root.pan-changed(root.index, v); }
         }
@@ -236,7 +333,7 @@ export component FxReturnStrip inherits Rectangle {
         Rectangle { height: 1px; background: #36303a; }
 
         Text { text: "Pan"; font-size: 9px; color: #8a8a90; }
-        Slider {
+        HorizontalBipolarFader {
             minimum: -1; maximum: 1; value: root.initial_pan;
             changed(v) => { root.pan-changed(v); }
         }

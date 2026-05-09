@@ -1,5 +1,6 @@
 mod audio;
 mod dsp;
+mod latency_test;
 mod midi;
 mod osc;
 mod persist;
@@ -80,6 +81,14 @@ struct Cli {
     /// state persistence still work; the process exits on Ctrl+C.
     #[arg(long, default_value_t = false)]
     no_ui: bool,
+
+    /// Round-trip latency measurement mode. Sets up ALSA with the supplied
+    /// buffer/period settings, prompts you to connect output channel 1 to
+    /// input channel 1 with a cable, fires a single impulse, measures how
+    /// many frames pass before it reappears on the input, prints the result,
+    /// and exits. The audio engine itself is not started.
+    #[arg(long, default_value_t = false)]
+    test_latency: bool,
 }
 
 const PERSIST_INTERVAL: Duration = Duration::from_secs(5);
@@ -125,6 +134,21 @@ fn main() -> Result<()> {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
+
+    // Latency-test mode is a totally separate path: ALSA only, no engine.
+    // We exit when it returns, success or failure.
+    if cli.test_latency {
+        return latency_test::run(
+            cli.input_device,
+            cli.output_device,
+            cli.sample_rate,
+            cli.sample_format,
+            cli.buffer_size,
+            cli.period_size,
+            cli.input_channels,
+            cli.audio_cpu,
+        );
+    }
 
     tracing::info!(
         "Starting: input={}, output={}, sample_rate={}, sample_format={:?}, in_ch={}, buffer_size={:?}, period_size={:?}, audio_cpu={}, worker_cpu={}",

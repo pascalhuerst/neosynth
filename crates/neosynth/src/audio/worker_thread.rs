@@ -100,15 +100,22 @@ pub fn start_worker_thread(
                 reverb.apply(mixer.reverb_bus_l, mixer.reverb_bus_r);
                 echo.apply(mixer.echo_bus_l, mixer.echo_bus_r);
                 mixer.add_returns(reverb.out_l, reverb.out_r, echo.out_l, echo.out_r);
-                mixer.finalize();
 
+                // Pre-fader compressor: operates on the summed master before
+                // the fader, so threshold settings stay invariant regardless
+                // of master gain. The fader (and HPF + master metering) is
+                // applied by `finalize()` to the compressed signal.
                 comp.apply(mixer.master_l, mixer.master_r);
                 if comp.gr_db > comp_peak_gr_db {
                     comp_peak_gr_db = comp.gr_db;
                 }
+                mixer.master_l = comp.out_l;
+                mixer.master_r = comp.out_r;
 
-                output_float[i] = comp.out_l;
-                output_float[period_size + i] = comp.out_r;
+                mixer.finalize();
+
+                output_float[i] = mixer.master_l;
+                output_float[period_size + i] = mixer.master_r;
             }
 
             // Publish per-bus levels (lock-free, latest-value-wins).
