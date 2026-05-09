@@ -10,7 +10,8 @@ export struct InputStripInit {
     pan: float,
     mute: bool,
     send_reverb: float,
-    send_echo: float,
+    send_stereo_delay: float,
+    send_tape_delay: float,
     send_pre_fader: bool,
 }
 
@@ -31,12 +32,15 @@ export component MainWindow inherits Window {
     in-out property <[float]> input-rms: [];
     in-out property <[InputStripInit]> input-init: [];
     in-out property <FxReturnInit> reverb-return-init: { gain_db: 0, pan: 0, mute: false };
-    in-out property <FxReturnInit> echo-return-init: { gain_db: 0, pan: 0, mute: false };
+    in-out property <FxReturnInit> stereo-delay-return-init: { gain_db: 0, pan: 0, mute: false };
+    in-out property <FxReturnInit> tape-delay-return-init: { gain_db: 0, pan: 0, mute: false };
     in-out property <float> master-init-gain-db: 0;
     in-out property <float> reverb-peak: 0;
     in-out property <float> reverb-rms: 0;
-    in-out property <float> echo-peak: 0;
-    in-out property <float> echo-rms: 0;
+    in-out property <float> stereo-delay-peak: 0;
+    in-out property <float> stereo-delay-rms: 0;
+    in-out property <float> tape-delay-peak: 0;
+    in-out property <float> tape-delay-rms: 0;
     in-out property <float> master-peak-l: 0;
     in-out property <float> master-rms-l: 0;
     in-out property <float> master-peak-r: 0;
@@ -51,12 +55,14 @@ export component MainWindow inherits Window {
     // Per-effect parameter models — populated by Rust from each effect's
     // FloatParams::all() declaration.
     in-out property <[FloatParam]> reverb-params: [];
-    in-out property <[FloatParam]> echo-params: [];
+    in-out property <[FloatParam]> stereo-delay-params: [];
+    in-out property <[FloatParam]> tape-delay-params: [];
     in-out property <[FloatParam]> compressor-params: [];
 
     // Generic per-effect callback: (param_index, new_value).
     callback reverb-param-changed(int, float);
-    callback echo-param-changed(int, float);
+    callback stereo-delay-param-changed(int, float);
+    callback tape-delay-param-changed(int, float);
     callback compressor-param-changed(int, float);
 
     // Mixer — input strips
@@ -64,16 +70,20 @@ export component MainWindow inherits Window {
     callback input-pan-changed(int, float);
     callback input-mute-changed(int, bool);
     callback input-send-reverb-changed(int, float);
-    callback input-send-echo-changed(int, float);
+    callback input-send-stereo-delay-changed(int, float);
+    callback input-send-tape-delay-changed(int, float);
     callback input-send-pre-fader-changed(int, bool);
 
     // Mixer — FX returns
     callback reverb-return-gain-changed(float);
     callback reverb-return-pan-changed(float);
     callback reverb-return-mute-changed(bool);
-    callback echo-return-gain-changed(float);
-    callback echo-return-pan-changed(float);
-    callback echo-return-mute-changed(bool);
+    callback stereo-delay-return-gain-changed(float);
+    callback stereo-delay-return-pan-changed(float);
+    callback stereo-delay-return-mute-changed(bool);
+    callback tape-delay-return-gain-changed(float);
+    callback tape-delay-return-pan-changed(float);
+    callback tape-delay-return-mute-changed(bool);
 
     // Mixer — master
     callback master-gain-changed(float);
@@ -124,13 +134,15 @@ export component MainWindow inherits Window {
                     initial_pan: i < root.input-init.length ? root.input-init[i].pan : 0;
                     initial_mute: i < root.input-init.length ? root.input-init[i].mute : false;
                     initial_send_reverb: i < root.input-init.length ? root.input-init[i].send_reverb : 0;
-                    initial_send_echo: i < root.input-init.length ? root.input-init[i].send_echo : 0;
+                    initial_send_stereo_delay: i < root.input-init.length ? root.input-init[i].send_stereo_delay : 0;
+                    initial_send_tape_delay: i < root.input-init.length ? root.input-init[i].send_tape_delay : 0;
                     initial_send_pre_fader: i < root.input-init.length ? root.input-init[i].send_pre_fader : false;
                     gain-changed(idx, v) => { root.input-gain-changed(idx, v); }
                     pan-changed(idx, v) => { root.input-pan-changed(idx, v); }
                     mute-changed(idx, v) => { root.input-mute-changed(idx, v); }
                     send-reverb-changed(idx, v) => { root.input-send-reverb-changed(idx, v); }
-                    send-echo-changed(idx, v) => { root.input-send-echo-changed(idx, v); }
+                    send-stereo-delay-changed(idx, v) => { root.input-send-stereo-delay-changed(idx, v); }
+                    send-tape-delay-changed(idx, v) => { root.input-send-tape-delay-changed(idx, v); }
                     send-pre-fader-changed(idx, v) => { root.input-send-pre-fader-changed(idx, v); }
                 }
 
@@ -149,16 +161,28 @@ export component MainWindow inherits Window {
                     edit-clicked => { reverb-popup.show(); }
                 }
                 FxReturnStrip {
-                    label: "Echo";
-                    meter_peak: root.echo-peak;
-                    meter_rms: root.echo-rms;
-                    initial_gain_db: root.echo-return-init.gain_db;
-                    initial_pan: root.echo-return-init.pan;
-                    initial_mute: root.echo-return-init.mute;
-                    gain-changed(v) => { root.echo-return-gain-changed(v); }
-                    pan-changed(v) => { root.echo-return-pan-changed(v); }
-                    mute-changed(v) => { root.echo-return-mute-changed(v); }
-                    edit-clicked => { echo-popup.show(); }
+                    label: "Stereo Delay";
+                    meter_peak: root.stereo-delay-peak;
+                    meter_rms: root.stereo-delay-rms;
+                    initial_gain_db: root.stereo-delay-return-init.gain_db;
+                    initial_pan: root.stereo-delay-return-init.pan;
+                    initial_mute: root.stereo-delay-return-init.mute;
+                    gain-changed(v) => { root.stereo-delay-return-gain-changed(v); }
+                    pan-changed(v) => { root.stereo-delay-return-pan-changed(v); }
+                    mute-changed(v) => { root.stereo-delay-return-mute-changed(v); }
+                    edit-clicked => { stereo-delay-popup.show(); }
+                }
+                FxReturnStrip {
+                    label: "Tape Delay";
+                    meter_peak: root.tape-delay-peak;
+                    meter_rms: root.tape-delay-rms;
+                    initial_gain_db: root.tape-delay-return-init.gain_db;
+                    initial_pan: root.tape-delay-return-init.pan;
+                    initial_mute: root.tape-delay-return-init.mute;
+                    gain-changed(v) => { root.tape-delay-return-gain-changed(v); }
+                    pan-changed(v) => { root.tape-delay-return-pan-changed(v); }
+                    mute-changed(v) => { root.tape-delay-return-mute-changed(v); }
+                    edit-clicked => { tape-delay-popup.show(); }
                 }
 
                 Rectangle { width: 12px; }
@@ -220,7 +244,7 @@ export component MainWindow inherits Window {
         }
     }
 
-    echo-popup := PopupWindow {
+    stereo-delay-popup := PopupWindow {
         x: (root.width - self.width) / 2;
         y: (root.height - self.height) / 2;
         width: 460px;
@@ -240,7 +264,7 @@ export component MainWindow inherits Window {
                 HorizontalLayout {
                     spacing: 8px;
                     Text {
-                        text: "Echo";
+                        text: "Stereo Delay";
                         font-size: 18px;
                         font-weight: 700;
                         color: #d8d8dc;
@@ -249,15 +273,58 @@ export component MainWindow inherits Window {
                     }
                     Button {
                         text: "Close";
-                        clicked => { echo-popup.close(); }
+                        clicked => { stereo-delay-popup.close(); }
                     }
                 }
 
                 Rectangle { height: 1px; background: #2b2b30; }
 
                 ParamPanel {
-                    float_params: root.echo-params;
-                    float_changed(idx, v) => { root.echo-param-changed(idx, v); }
+                    float_params: root.stereo-delay-params;
+                    float_changed(idx, v) => { root.stereo-delay-param-changed(idx, v); }
+                }
+            }
+        }
+    }
+
+    tape-delay-popup := PopupWindow {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: 480px;
+        height: 620px;
+        close-policy: no-auto-close;
+
+        Rectangle {
+            background: #16161a;
+            border-color: #2b2b30;
+            border-width: 1px;
+            border-radius: 6px;
+
+            VerticalBox {
+                padding: 12px;
+                spacing: 8px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: "Tape Delay";
+                        font-size: 18px;
+                        font-weight: 700;
+                        color: #d8d8dc;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    Button {
+                        text: "Close";
+                        clicked => { tape-delay-popup.close(); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: #2b2b30; }
+
+                ParamPanel {
+                    float_params: root.tape-delay-params;
+                    float_changed(idx, v) => { root.tape-delay-param-changed(idx, v); }
                 }
             }
         }

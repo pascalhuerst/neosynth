@@ -68,8 +68,9 @@ ExecStart=/usr/bin/systemd-inhibit \
     /usr/bin/cage -s -- \
     /usr/bin/systemd-cat --identifier=neosynth --stderr-priority=info -- \
     /usr/sbin/neosynth \
-        --input-device hw:0,0,0 \
-        --output-device hw:0,0,0 \
+        --input-device plughw:Audio4DJ \
+        --input-channels 4 \
+        --output-device plughw:Audio4DJ \
         --sample-rate 48000 \
         --buffer-size 88 \
         --period-size 22 \

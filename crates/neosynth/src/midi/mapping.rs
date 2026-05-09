@@ -1,9 +1,10 @@
 use crate::audio::InputParameters;
 use crate::dsp::compressor::CompressorParamKind;
-use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::{self, MixerBoolId, MixerFloatId, MixerParamId};
 use crate::dsp::param::{FloatCurve, FloatParams};
 use crate::dsp::reverb::ReverbParamKind;
+use crate::dsp::stereo_delay::StereoDelayParamKind;
+use crate::dsp::tape_delay::TapeDelayParamKind;
 
 /// What float-typed parameter a CC binding addresses.
 ///
@@ -13,7 +14,8 @@ use crate::dsp::reverb::ReverbParamKind;
 #[derive(Debug, Clone, Copy)]
 pub enum FloatTarget {
     Reverb(ReverbParamKind),
-    Echo(EchoParamKind),
+    StereoDelay(StereoDelayParamKind),
+    TapeDelay(TapeDelayParamKind),
     Compressor(CompressorParamKind),
     Mixer(MixerFloatId),
 }
@@ -22,7 +24,8 @@ impl FloatTarget {
     pub fn into_param(self, v: f64) -> InputParameters {
         match self {
             Self::Reverb(id) => InputParameters::Reverb(id.build(v)),
-            Self::Echo(id) => InputParameters::Echo(id.build(v)),
+            Self::StereoDelay(id) => InputParameters::StereoDelay(id.build(v)),
+            Self::TapeDelay(id) => InputParameters::TapeDelay(id.build(v)),
             Self::Compressor(id) => InputParameters::Compressor(id.build(v)),
             Self::Mixer(id) => InputParameters::Mixer(id.build(v)),
         }
@@ -73,7 +76,7 @@ pub enum CcBinding {
 }
 
 /// Build the default mapping: channel 0, CCs starting at 1, mixer first
-/// (per-strip block), then reverb edit knobs, then echo edit knobs.
+/// (per-strip block), then reverb edit knobs, then stereo_delay edit knobs.
 ///
 /// Each effect declares its own parameter list — this function iterates them
 /// and never enumerates parameters by hand. Adding a parameter to an effect
@@ -103,7 +106,8 @@ pub fn default_mapping(num_inputs: usize) -> Vec<CcBinding> {
     }
 
     append_float_params::<ReverbParamKind, _>(&mut bindings, &mut cc_num, channel, FloatTarget::Reverb);
-    append_float_params::<EchoParamKind, _>(&mut bindings, &mut cc_num, channel, FloatTarget::Echo);
+    append_float_params::<StereoDelayParamKind, _>(&mut bindings, &mut cc_num, channel, FloatTarget::StereoDelay);
+    append_float_params::<TapeDelayParamKind, _>(&mut bindings, &mut cc_num, channel, FloatTarget::TapeDelay);
     append_float_params::<CompressorParamKind, _>(
         &mut bindings,
         &mut cc_num,

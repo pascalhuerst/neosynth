@@ -5,9 +5,10 @@ use super::meters::MetersOutput;
 use super::parameters::InputParameters;
 use super::realtime::{prioritize_thread, set_thread_affinity};
 use crate::dsp::compressor::Compressor;
-use crate::dsp::echo::Echo;
 use crate::dsp::mixer::Mixer;
 use crate::dsp::reverb::Reverb;
+use crate::dsp::stereo_delay::StereoDelay;
+use crate::dsp::tape_delay::TapeDelay;
 
 use ringbuf::traits::*;
 use std::sync::Arc;
@@ -18,7 +19,7 @@ const NUM_OUTPUT_CHANNELS: usize = 2;
 
 /// Spawn the DSP worker thread.
 ///
-/// The worker runs the entire mixer + reverb + echo chain. It owns the
+/// The worker runs the entire mixer + reverb + stereo_delay chain. It owns the
 /// parameter consumers (UI/MIDI/OSC) so live param edits land here without
 /// crossing the callback thread. Communication with the callback thread is
 /// two SPSC f32 ringbufs: one carrying deinterleaved input samples, one
@@ -52,7 +53,8 @@ pub fn start_worker_thread(
         let mut frame: Vec<f32> = vec![0.0; num_input_channels];
 
         let mut reverb = Reverb::new(sample_rate as f32, 1);
-        let mut echo = Echo::new(sample_rate as f32, 1);
+        let mut stereo_delay = StereoDelay::new(sample_rate as f32, 1);
+        let mut tape_delay = TapeDelay::new(sample_rate as f32);
         let mut mixer = Mixer::new(sample_rate as f32, num_input_channels);
         let mut comp = Compressor::new(sample_rate as f32);
 
@@ -67,13 +69,13 @@ pub fn start_worker_thread(
             // Drain parameter updates first so any in-flight edits are applied
             // before the period that's about to be processed.
             while let Some(update) = ui_params.try_pop() {
-                dispatch(update, &mut reverb, &mut echo, &mut mixer, &mut comp);
+                dispatch(update, &mut reverb, &mut stereo_delay, &mut tape_delay, &mut mixer, &mut comp);
             }
             while let Some(update) = midi_params.try_pop() {
-                dispatch(update, &mut reverb, &mut echo, &mut mixer, &mut comp);
+                dispatch(update, &mut reverb, &mut stereo_delay, &mut tape_delay, &mut mixer, &mut comp);
             }
             while let Some(update) = osc_params.try_pop() {
-                dispatch(update, &mut reverb, &mut echo, &mut mixer, &mut comp);
+                dispatch(update, &mut reverb, &mut stereo_delay, &mut tape_delay, &mut mixer, &mut comp);
             }
 
             // Spin until a full period of input is available. Cheap atomic
@@ -98,8 +100,16 @@ pub fn start_worker_thread(
 
                 mixer.process_inputs(&frame);
                 reverb.apply(mixer.reverb_bus_l, mixer.reverb_bus_r);
-                echo.apply(mixer.echo_bus_l, mixer.echo_bus_r);
-                mixer.add_returns(reverb.out_l, reverb.out_r, echo.out_l, echo.out_r);
+                stereo_delay.apply(mixer.stereo_delay_bus_l, mixer.stereo_delay_bus_r);
+                tape_delay.apply(mixer.tape_delay_bus_l, mixer.tape_delay_bus_r);
+                mixer.add_returns(
+                    reverb.out_l,
+                    reverb.out_r,
+                    stereo_delay.out_l,
+                    stereo_delay.out_r,
+                    tape_delay.out_l,
+                    tape_delay.out_r,
+                );
 
                 // Pre-fader compressor: operates on the summed master before
                 // the fader, so threshold settings stay invariant regardless
@@ -128,7 +138,8 @@ pub fn start_worker_thread(
                 meters.store_input(idx, peak, (sum_sq / n).sqrt());
             }
             meters.store_reverb(l.reverb_peak, (l.reverb_sum_sq / two_n).sqrt());
-            meters.store_echo(l.echo_peak, (l.echo_sum_sq / two_n).sqrt());
+            meters.store_stereo_delay(l.stereo_delay_peak, (l.stereo_delay_sum_sq / two_n).sqrt());
+            meters.store_tape_delay(l.tape_delay_peak, (l.tape_delay_sum_sq / two_n).sqrt());
             meters.store_master(
                 l.master_l_peak,
                 (l.master_l_sum_sq / n).sqrt(),
@@ -154,17 +165,20 @@ pub fn start_worker_thread(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 #[inline]
 fn dispatch(
     update: InputParameters,
     reverb: &mut Reverb,
-    echo: &mut Echo,
+    stereo_delay: &mut StereoDelay,
+    tape_delay: &mut TapeDelay,
     mixer: &mut Mixer,
     comp: &mut Compressor,
 ) {
     match update {
         InputParameters::Reverb(p) => reverb.update_param(p),
-        InputParameters::Echo(p) => echo.update_param(p),
+        InputParameters::StereoDelay(p) => stereo_delay.update_param(p),
+        InputParameters::TapeDelay(p) => tape_delay.update_param(p),
         InputParameters::Mixer(p) => mixer.update_param(p),
         InputParameters::Compressor(p) => comp.update_param(p),
     }

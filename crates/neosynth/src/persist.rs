@@ -9,15 +9,19 @@ use std::time::Duration;
 
 use crate::audio::InputParameters;
 use crate::dsp::compressor::{CompressorParam, CompressorParams};
-use crate::dsp::echo::{EchoParam, EchoParams};
 use crate::dsp::mixer::MixerParam;
 use crate::dsp::param::FloatParams;
 use crate::dsp::reverb::{ReverbParam, ReverbParams};
+use crate::dsp::stereo_delay::{StereoDelayParam, StereoDelayParams};
+use crate::dsp::tape_delay::{TapeDelayParam, TapeDelayParams};
 
 /// Bumped when the serialised format becomes incompatible. Future versions
 /// can match on this and migrate. Missing fields always fall back to defaults
 /// thanks to `#[serde(default)]`, so additive changes don't need a bump.
-const SCHEMA_VERSION: u32 = 1;
+/// Bumped when the serialised format becomes incompatible. v2: renamed
+/// `echo` → `stereo_delay` (and equivalents in MixerSnapshot / InputStripState).
+/// Old v1 files still load via `#[serde(alias = "echo")]` shims.
+const SCHEMA_VERSION: u32 = 2;
 
 /// Top-level user-state mirror. Lives in `Arc<Mutex<...>>` on the main
 /// thread; UI and MIDI threads call `apply()` after pushing each event.
@@ -28,7 +32,9 @@ pub struct AppState {
     pub version: u32,
     pub mixer: MixerSnapshot,
     pub reverb: ReverbParams,
-    pub echo: EchoParams,
+    #[serde(alias = "echo")]
+    pub stereo_delay: StereoDelayParams,
+    pub tape_delay: TapeDelayParams,
     pub compressor: CompressorParams,
 }
 
@@ -38,7 +44,8 @@ impl Default for AppState {
             version: SCHEMA_VERSION,
             mixer: MixerSnapshot::default(),
             reverb: ReverbParams::default(),
-            echo: EchoParams::default(),
+            stereo_delay: StereoDelayParams::default(),
+            tape_delay: TapeDelayParams::default(),
             compressor: CompressorParams::default(),
         }
     }
@@ -50,7 +57,8 @@ impl AppState {
     pub fn apply(&mut self, event: InputParameters) {
         match event {
             InputParameters::Reverb(p) => apply_reverb(p, &mut self.reverb),
-            InputParameters::Echo(p) => apply_echo(p, &mut self.echo),
+            InputParameters::StereoDelay(p) => apply_stereo_delay(p, &mut self.stereo_delay),
+            InputParameters::TapeDelay(p) => apply_tape_delay(p, &mut self.tape_delay),
             InputParameters::Mixer(p) => self.mixer.apply(p),
             InputParameters::Compressor(p) => apply_compressor(p, &mut self.compressor),
         }
@@ -68,8 +76,9 @@ impl AppState {
     /// the audio thread, will reproduce this state. Used at startup.
     pub fn replay_events(&self) -> Vec<InputParameters> {
         use crate::dsp::compressor::CompressorParamKind;
-        use crate::dsp::echo::EchoParamKind;
         use crate::dsp::reverb::ReverbParamKind;
+        use crate::dsp::stereo_delay::StereoDelayParamKind;
+        use crate::dsp::tape_delay::TapeDelayParamKind;
 
         let mut out = Vec::new();
 
@@ -77,9 +86,13 @@ impl AppState {
             let v = id.read(&self.reverb);
             out.push(InputParameters::Reverb(id.build(v)));
         }
-        for &id in EchoParamKind::all() {
-            let v = id.read(&self.echo);
-            out.push(InputParameters::Echo(id.build(v)));
+        for &id in StereoDelayParamKind::all() {
+            let v = id.read(&self.stereo_delay);
+            out.push(InputParameters::StereoDelay(id.build(v)));
+        }
+        for &id in TapeDelayParamKind::all() {
+            let v = id.read(&self.tape_delay);
+            out.push(InputParameters::TapeDelay(id.build(v)));
         }
         for &id in CompressorParamKind::all() {
             let v = id.read(&self.compressor);
@@ -100,9 +113,13 @@ impl AppState {
                 i,
                 s.send_reverb as f64,
             )));
-            out.push(InputParameters::Mixer(MixerParam::InputSendEcho(
+            out.push(InputParameters::Mixer(MixerParam::InputSendStereoDelay(
                 i,
-                s.send_echo as f64,
+                s.send_stereo_delay as f64,
+            )));
+            out.push(InputParameters::Mixer(MixerParam::InputSendTapeDelay(
+                i,
+                s.send_tape_delay as f64,
             )));
             out.push(InputParameters::Mixer(MixerParam::InputSendPreFader(
                 i,
@@ -119,14 +136,23 @@ impl AppState {
         out.push(InputParameters::Mixer(MixerParam::ReverbReturnMute(
             self.mixer.reverb_return.mute,
         )));
-        out.push(InputParameters::Mixer(MixerParam::EchoReturnGainDb(
-            self.mixer.echo_return.gain_db as f64,
+        out.push(InputParameters::Mixer(MixerParam::StereoDelayReturnGainDb(
+            self.mixer.stereo_delay_return.gain_db as f64,
         )));
-        out.push(InputParameters::Mixer(MixerParam::EchoReturnPan(
-            self.mixer.echo_return.pan as f64,
+        out.push(InputParameters::Mixer(MixerParam::StereoDelayReturnPan(
+            self.mixer.stereo_delay_return.pan as f64,
         )));
-        out.push(InputParameters::Mixer(MixerParam::EchoReturnMute(
-            self.mixer.echo_return.mute,
+        out.push(InputParameters::Mixer(MixerParam::StereoDelayReturnMute(
+            self.mixer.stereo_delay_return.mute,
+        )));
+        out.push(InputParameters::Mixer(MixerParam::TapeDelayReturnGainDb(
+            self.mixer.tape_delay_return.gain_db as f64,
+        )));
+        out.push(InputParameters::Mixer(MixerParam::TapeDelayReturnPan(
+            self.mixer.tape_delay_return.pan as f64,
+        )));
+        out.push(InputParameters::Mixer(MixerParam::TapeDelayReturnMute(
+            self.mixer.tape_delay_return.mute,
         )));
         out.push(InputParameters::Mixer(MixerParam::MasterGainDb(
             self.mixer.master_gain_db as f64,
@@ -196,7 +222,9 @@ impl AppState {
 pub struct MixerSnapshot {
     pub inputs: Vec<InputStripState>,
     pub reverb_return: FxReturnState,
-    pub echo_return: FxReturnState,
+    #[serde(alias = "echo_return")]
+    pub stereo_delay_return: FxReturnState,
+    pub tape_delay_return: FxReturnState,
     pub master_gain_db: f32,
 }
 
@@ -205,7 +233,8 @@ impl Default for MixerSnapshot {
         Self {
             inputs: Vec::new(),
             reverb_return: FxReturnState::default(),
-            echo_return: FxReturnState::default(),
+            stereo_delay_return: FxReturnState::default(),
+            tape_delay_return: FxReturnState::default(),
             master_gain_db: 0.0,
         }
     }
@@ -234,9 +263,14 @@ impl MixerSnapshot {
                     s.send_reverb = (v as f32).clamp(0.0, 1.0);
                 }
             }
-            MixerParam::InputSendEcho(i, v) => {
+            MixerParam::InputSendStereoDelay(i, v) => {
                 if let Some(s) = self.inputs.get_mut(i) {
-                    s.send_echo = (v as f32).clamp(0.0, 1.0);
+                    s.send_stereo_delay = (v as f32).clamp(0.0, 1.0);
+                }
+            }
+            MixerParam::InputSendTapeDelay(i, v) => {
+                if let Some(s) = self.inputs.get_mut(i) {
+                    s.send_tape_delay = (v as f32).clamp(0.0, 1.0);
                 }
             }
             MixerParam::InputSendPreFader(i, v) => {
@@ -249,11 +283,16 @@ impl MixerSnapshot {
                 self.reverb_return.pan = (v as f32).clamp(-1.0, 1.0);
             }
             MixerParam::ReverbReturnMute(v) => self.reverb_return.mute = v,
-            MixerParam::EchoReturnGainDb(v) => self.echo_return.gain_db = v as f32,
-            MixerParam::EchoReturnPan(v) => {
-                self.echo_return.pan = (v as f32).clamp(-1.0, 1.0);
+            MixerParam::StereoDelayReturnGainDb(v) => self.stereo_delay_return.gain_db = v as f32,
+            MixerParam::StereoDelayReturnPan(v) => {
+                self.stereo_delay_return.pan = (v as f32).clamp(-1.0, 1.0);
             }
-            MixerParam::EchoReturnMute(v) => self.echo_return.mute = v,
+            MixerParam::StereoDelayReturnMute(v) => self.stereo_delay_return.mute = v,
+            MixerParam::TapeDelayReturnGainDb(v) => self.tape_delay_return.gain_db = v as f32,
+            MixerParam::TapeDelayReturnPan(v) => {
+                self.tape_delay_return.pan = (v as f32).clamp(-1.0, 1.0);
+            }
+            MixerParam::TapeDelayReturnMute(v) => self.tape_delay_return.mute = v,
             MixerParam::MasterGainDb(v) => self.master_gain_db = v as f32,
         }
     }
@@ -266,7 +305,9 @@ pub struct InputStripState {
     pub pan: f32,
     pub mute: bool,
     pub send_reverb: f32,
-    pub send_echo: f32,
+    #[serde(alias = "send_echo")]
+    pub send_stereo_delay: f32,
+    pub send_tape_delay: f32,
     pub send_pre_fader: bool,
 }
 
@@ -291,14 +332,31 @@ fn apply_reverb(p: ReverbParam, s: &mut ReverbParams) {
     }
 }
 
-fn apply_echo(p: EchoParam, s: &mut EchoParams) {
+fn apply_stereo_delay(p: StereoDelayParam, s: &mut StereoDelayParams) {
     match p {
-        EchoParam::Send(v) => s.send = v as f32,
-        EchoParam::FbLocal(v) => s.fb_local = v as f32,
-        EchoParam::FbCross(v) => s.fb_cross = v as f32,
-        EchoParam::TimeLMs(v) => s.time_l_ms = v as f32,
-        EchoParam::TimeRMs(v) => s.time_r_ms = v as f32,
-        EchoParam::LpfHz(v) => s.lpf_hz = v as f32,
+        StereoDelayParam::Send(v) => s.send = v as f32,
+        StereoDelayParam::FbLocal(v) => s.fb_local = v as f32,
+        StereoDelayParam::FbCross(v) => s.fb_cross = v as f32,
+        StereoDelayParam::TimeLMs(v) => s.time_l_ms = v as f32,
+        StereoDelayParam::TimeRMs(v) => s.time_r_ms = v as f32,
+        StereoDelayParam::LpfHz(v) => s.lpf_hz = v as f32,
+    }
+}
+
+fn apply_tape_delay(p: TapeDelayParam, s: &mut TapeDelayParams) {
+    match p {
+        TapeDelayParam::Send(v) => s.send = v as f32,
+        TapeDelayParam::RepeatRateMs(v) => s.repeat_rate_ms = v as f32,
+        TapeDelayParam::Intensity(v) => s.intensity = v as f32,
+        TapeDelayParam::H1Level(v) => s.h1_level = v as f32,
+        TapeDelayParam::H2Level(v) => s.h2_level = v as f32,
+        TapeDelayParam::H3Level(v) => s.h3_level = v as f32,
+        TapeDelayParam::SaturationDrive(v) => s.saturation_drive = v as f32,
+        TapeDelayParam::HfRolloffHz(v) => s.hf_rolloff_hz = v as f32,
+        TapeDelayParam::WowDepth(v) => s.wow_depth = v as f32,
+        TapeDelayParam::WowRateHz(v) => s.wow_rate_hz = v as f32,
+        TapeDelayParam::FlutterDepth(v) => s.flutter_depth = v as f32,
+        TapeDelayParam::FlutterRateHz(v) => s.flutter_rate_hz = v as f32,
     }
 }
 

@@ -4,10 +4,11 @@ use rosc::OscType;
 
 use crate::audio::InputParameters;
 use crate::dsp::compressor::CompressorParamKind;
-use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::{self, MixerBoolId, MixerFloatId, MixerParamId};
 use crate::dsp::param::FloatParams;
 use crate::dsp::reverb::ReverbParamKind;
+use crate::dsp::stereo_delay::StereoDelayParamKind;
+use crate::dsp::tape_delay::TapeDelayParamKind;
 use crate::persist::AppState;
 
 /// Current value of an OSC-addressable parameter, returned by
@@ -35,7 +36,8 @@ pub enum OscParamKind {
 #[derive(Clone, Copy)]
 enum RouteTarget {
     Reverb(ReverbParamKind),
-    Echo(EchoParamKind),
+    StereoDelay(StereoDelayParamKind),
+    TapeDelay(TapeDelayParamKind),
     Compressor(CompressorParamKind),
     MixerFloat(MixerFloatId),
     MixerBool(MixerBoolId),
@@ -56,7 +58,8 @@ impl OscRouter {
 
         // Effect float params (auto-derived via FloatParams trait)
         push_effect::<ReverbParamKind, _>(&mut routes, &mut introspection, RouteTarget::Reverb);
-        push_effect::<EchoParamKind, _>(&mut routes, &mut introspection, RouteTarget::Echo);
+        push_effect::<StereoDelayParamKind, _>(&mut routes, &mut introspection, RouteTarget::StereoDelay);
+        push_effect::<TapeDelayParamKind, _>(&mut routes, &mut introspection, RouteTarget::TapeDelay);
         push_effect::<CompressorParamKind, _>(
             &mut routes,
             &mut introspection,
@@ -104,9 +107,13 @@ impl OscRouter {
                 let v = first_float(args)?;
                 Some(InputParameters::Reverb(k.build(v as f64)))
             }
-            RouteTarget::Echo(k) => {
+            RouteTarget::StereoDelay(k) => {
                 let v = first_float(args)?;
-                Some(InputParameters::Echo(k.build(v as f64)))
+                Some(InputParameters::StereoDelay(k.build(v as f64)))
+            }
+            RouteTarget::TapeDelay(k) => {
+                let v = first_float(args)?;
+                Some(InputParameters::TapeDelay(k.build(v as f64)))
             }
             RouteTarget::Compressor(k) => {
                 let v = first_float(args)?;
@@ -133,7 +140,8 @@ impl OscRouter {
         let target = self.routes.get(addr)?;
         match target {
             RouteTarget::Reverb(k) => Some(OscValue::Float(k.read(&state.reverb) as f32)),
-            RouteTarget::Echo(k) => Some(OscValue::Float(k.read(&state.echo) as f32)),
+            RouteTarget::StereoDelay(k) => Some(OscValue::Float(k.read(&state.stereo_delay) as f32)),
+            RouteTarget::TapeDelay(k) => Some(OscValue::Float(k.read(&state.tape_delay) as f32)),
             RouteTarget::Compressor(k) => Some(OscValue::Float(k.read(&state.compressor) as f32)),
             RouteTarget::MixerFloat(f) => f.read(&state.mixer).map(OscValue::Float),
             RouteTarget::MixerBool(b) => b.read(&state.mixer).map(OscValue::Bool),
@@ -248,7 +256,7 @@ mod tests {
         let r = OscRouter::new(2);
         let paths: Vec<&str> = r.introspection().iter().map(|p| p.path.as_str()).collect();
         assert!(paths.contains(&"/reverb/size"));
-        assert!(paths.contains(&"/echo/time_l_ms"));
+        assert!(paths.contains(&"/stereo_delay/time_l_ms"));
         assert!(paths.contains(&"/mixer/input/0/gain_db"));
         assert!(paths.contains(&"/mixer/input/1/pan"));
         assert!(paths.contains(&"/mixer/master/gain_db"));

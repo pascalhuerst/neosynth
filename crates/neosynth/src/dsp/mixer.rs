@@ -8,7 +8,8 @@ pub struct InputStripParams {
     pub pan: f32,
     pub mute: bool,
     pub send_reverb: f32,
-    pub send_echo: f32,
+    pub send_stereo_delay: f32,
+    pub send_tape_delay: f32,
     pub send_pre_fader: bool,
 }
 
@@ -19,7 +20,8 @@ impl Default for InputStripParams {
             pan: 0.0,
             mute: false,
             send_reverb: 0.0,
-            send_echo: 0.0,
+            send_stereo_delay: 0.0,
+            send_tape_delay: 0.0,
             send_pre_fader: false,
         }
     }
@@ -59,16 +61,21 @@ pub enum MixerParam {
     InputPan(usize, f64),
     InputMute(usize, bool),
     InputSendReverb(usize, f64),
-    InputSendEcho(usize, f64),
+    InputSendStereoDelay(usize, f64),
+    InputSendTapeDelay(usize, f64),
     InputSendPreFader(usize, bool),
 
     ReverbReturnGainDb(f64),
     ReverbReturnPan(f64),
     ReverbReturnMute(bool),
 
-    EchoReturnGainDb(f64),
-    EchoReturnPan(f64),
-    EchoReturnMute(bool),
+    StereoDelayReturnGainDb(f64),
+    StereoDelayReturnPan(f64),
+    StereoDelayReturnMute(bool),
+
+    TapeDelayReturnGainDb(f64),
+    TapeDelayReturnPan(f64),
+    TapeDelayReturnMute(bool),
 
     MasterGainDb(f64),
 }
@@ -81,11 +88,14 @@ pub enum MixerFloatId {
     InputGainDb(usize),
     InputPan(usize),
     InputSendReverb(usize),
-    InputSendEcho(usize),
+    InputSendStereoDelay(usize),
+    InputSendTapeDelay(usize),
     ReverbReturnGainDb,
     ReverbReturnPan,
-    EchoReturnGainDb,
-    EchoReturnPan,
+    StereoDelayReturnGainDb,
+    StereoDelayReturnPan,
+    TapeDelayReturnGainDb,
+    TapeDelayReturnPan,
     MasterGainDb,
 }
 
@@ -95,11 +105,14 @@ impl MixerFloatId {
             Self::InputGainDb(i) => MixerParam::InputGainDb(i, v),
             Self::InputPan(i) => MixerParam::InputPan(i, v),
             Self::InputSendReverb(i) => MixerParam::InputSendReverb(i, v),
-            Self::InputSendEcho(i) => MixerParam::InputSendEcho(i, v),
+            Self::InputSendStereoDelay(i) => MixerParam::InputSendStereoDelay(i, v),
+            Self::InputSendTapeDelay(i) => MixerParam::InputSendTapeDelay(i, v),
             Self::ReverbReturnGainDb => MixerParam::ReverbReturnGainDb(v),
             Self::ReverbReturnPan => MixerParam::ReverbReturnPan(v),
-            Self::EchoReturnGainDb => MixerParam::EchoReturnGainDb(v),
-            Self::EchoReturnPan => MixerParam::EchoReturnPan(v),
+            Self::StereoDelayReturnGainDb => MixerParam::StereoDelayReturnGainDb(v),
+            Self::StereoDelayReturnPan => MixerParam::StereoDelayReturnPan(v),
+            Self::TapeDelayReturnGainDb => MixerParam::TapeDelayReturnGainDb(v),
+            Self::TapeDelayReturnPan => MixerParam::TapeDelayReturnPan(v),
             Self::MasterGainDb => MixerParam::MasterGainDb(v),
         }
     }
@@ -108,14 +121,16 @@ impl MixerFloatId {
         match self {
             Self::InputGainDb(_)
             | Self::ReverbReturnGainDb
-            | Self::EchoReturnGainDb
+            | Self::StereoDelayReturnGainDb
+            | Self::TapeDelayReturnGainDb
             | Self::MasterGainDb => FloatCurve::Linear { min: -60.0, max: 12.0 },
-            Self::InputPan(_) | Self::ReverbReturnPan | Self::EchoReturnPan => {
-                FloatCurve::Linear { min: -1.0, max: 1.0 }
-            }
-            Self::InputSendReverb(_) | Self::InputSendEcho(_) => {
-                FloatCurve::Linear { min: 0.0, max: 1.0 }
-            }
+            Self::InputPan(_)
+            | Self::ReverbReturnPan
+            | Self::StereoDelayReturnPan
+            | Self::TapeDelayReturnPan => FloatCurve::Linear { min: -1.0, max: 1.0 },
+            Self::InputSendReverb(_)
+            | Self::InputSendStereoDelay(_)
+            | Self::InputSendTapeDelay(_) => FloatCurve::Linear { min: 0.0, max: 1.0 },
         }
     }
 
@@ -132,11 +147,14 @@ impl MixerFloatId {
             Self::InputGainDb(i) => snap.inputs.get(i).map(|s| s.gain_db),
             Self::InputPan(i) => snap.inputs.get(i).map(|s| s.pan),
             Self::InputSendReverb(i) => snap.inputs.get(i).map(|s| s.send_reverb),
-            Self::InputSendEcho(i) => snap.inputs.get(i).map(|s| s.send_echo),
+            Self::InputSendStereoDelay(i) => snap.inputs.get(i).map(|s| s.send_stereo_delay),
+            Self::InputSendTapeDelay(i) => snap.inputs.get(i).map(|s| s.send_tape_delay),
             Self::ReverbReturnGainDb => Some(snap.reverb_return.gain_db),
             Self::ReverbReturnPan => Some(snap.reverb_return.pan),
-            Self::EchoReturnGainDb => Some(snap.echo_return.gain_db),
-            Self::EchoReturnPan => Some(snap.echo_return.pan),
+            Self::StereoDelayReturnGainDb => Some(snap.stereo_delay_return.gain_db),
+            Self::StereoDelayReturnPan => Some(snap.stereo_delay_return.pan),
+            Self::TapeDelayReturnGainDb => Some(snap.tape_delay_return.gain_db),
+            Self::TapeDelayReturnPan => Some(snap.tape_delay_return.pan),
             Self::MasterGainDb => Some(snap.master_gain_db),
         }
     }
@@ -147,11 +165,14 @@ impl MixerFloatId {
             Self::InputGainDb(i) => format!("/mixer/input/{i}/gain_db"),
             Self::InputPan(i) => format!("/mixer/input/{i}/pan"),
             Self::InputSendReverb(i) => format!("/mixer/input/{i}/send_reverb"),
-            Self::InputSendEcho(i) => format!("/mixer/input/{i}/send_echo"),
+            Self::InputSendStereoDelay(i) => format!("/mixer/input/{i}/send_stereo_delay"),
+            Self::InputSendTapeDelay(i) => format!("/mixer/input/{i}/send_tape_delay"),
             Self::ReverbReturnGainDb => "/mixer/reverb_return/gain_db".into(),
             Self::ReverbReturnPan => "/mixer/reverb_return/pan".into(),
-            Self::EchoReturnGainDb => "/mixer/echo_return/gain_db".into(),
-            Self::EchoReturnPan => "/mixer/echo_return/pan".into(),
+            Self::StereoDelayReturnGainDb => "/mixer/stereo_delay_return/gain_db".into(),
+            Self::StereoDelayReturnPan => "/mixer/stereo_delay_return/pan".into(),
+            Self::TapeDelayReturnGainDb => "/mixer/tape_delay_return/gain_db".into(),
+            Self::TapeDelayReturnPan => "/mixer/tape_delay_return/pan".into(),
             Self::MasterGainDb => "/mixer/master/gain_db".into(),
         }
     }
@@ -163,7 +184,8 @@ pub enum MixerBoolId {
     InputMute(usize),
     InputSendPreFader(usize),
     ReverbReturnMute,
-    EchoReturnMute,
+    StereoDelayReturnMute,
+    TapeDelayReturnMute,
 }
 
 impl MixerBoolId {
@@ -172,7 +194,8 @@ impl MixerBoolId {
             Self::InputMute(i) => MixerParam::InputMute(i, v),
             Self::InputSendPreFader(i) => MixerParam::InputSendPreFader(i, v),
             Self::ReverbReturnMute => MixerParam::ReverbReturnMute(v),
-            Self::EchoReturnMute => MixerParam::EchoReturnMute(v),
+            Self::StereoDelayReturnMute => MixerParam::StereoDelayReturnMute(v),
+            Self::TapeDelayReturnMute => MixerParam::TapeDelayReturnMute(v),
         }
     }
 
@@ -185,7 +208,8 @@ impl MixerBoolId {
             Self::InputMute(i) => snap.inputs.get(i).map(|s| s.mute),
             Self::InputSendPreFader(i) => snap.inputs.get(i).map(|s| s.send_pre_fader),
             Self::ReverbReturnMute => Some(snap.reverb_return.mute),
-            Self::EchoReturnMute => Some(snap.echo_return.mute),
+            Self::StereoDelayReturnMute => Some(snap.stereo_delay_return.mute),
+            Self::TapeDelayReturnMute => Some(snap.tape_delay_return.mute),
         }
     }
 
@@ -194,7 +218,8 @@ impl MixerBoolId {
             Self::InputMute(i) => format!("/mixer/input/{i}/mute"),
             Self::InputSendPreFader(i) => format!("/mixer/input/{i}/send_pre_fader"),
             Self::ReverbReturnMute => "/mixer/reverb_return/mute".into(),
-            Self::EchoReturnMute => "/mixer/echo_return/mute".into(),
+            Self::StereoDelayReturnMute => "/mixer/stereo_delay_return/mute".into(),
+            Self::TapeDelayReturnMute => "/mixer/tape_delay_return/mute".into(),
         }
     }
 }
@@ -215,16 +240,20 @@ pub fn default_param_order(num_inputs: usize) -> Vec<MixerParamId> {
         out.push(MixerParamId::Float(MixerFloatId::InputGainDb(i)));
         out.push(MixerParamId::Float(MixerFloatId::InputPan(i)));
         out.push(MixerParamId::Float(MixerFloatId::InputSendReverb(i)));
-        out.push(MixerParamId::Float(MixerFloatId::InputSendEcho(i)));
+        out.push(MixerParamId::Float(MixerFloatId::InputSendStereoDelay(i)));
+        out.push(MixerParamId::Float(MixerFloatId::InputSendTapeDelay(i)));
         out.push(MixerParamId::Bool(MixerBoolId::InputMute(i)));
         out.push(MixerParamId::Bool(MixerBoolId::InputSendPreFader(i)));
     }
     out.push(MixerParamId::Float(MixerFloatId::ReverbReturnGainDb));
     out.push(MixerParamId::Float(MixerFloatId::ReverbReturnPan));
     out.push(MixerParamId::Bool(MixerBoolId::ReverbReturnMute));
-    out.push(MixerParamId::Float(MixerFloatId::EchoReturnGainDb));
-    out.push(MixerParamId::Float(MixerFloatId::EchoReturnPan));
-    out.push(MixerParamId::Bool(MixerBoolId::EchoReturnMute));
+    out.push(MixerParamId::Float(MixerFloatId::StereoDelayReturnGainDb));
+    out.push(MixerParamId::Float(MixerFloatId::StereoDelayReturnPan));
+    out.push(MixerParamId::Bool(MixerBoolId::StereoDelayReturnMute));
+    out.push(MixerParamId::Float(MixerFloatId::TapeDelayReturnGainDb));
+    out.push(MixerParamId::Float(MixerFloatId::TapeDelayReturnPan));
+    out.push(MixerParamId::Bool(MixerBoolId::TapeDelayReturnMute));
     out.push(MixerParamId::Float(MixerFloatId::MasterGainDb));
     out
 }
@@ -241,8 +270,10 @@ pub struct Levels {
     pub input_sum_sq: Vec<f32>,
     pub reverb_peak: f32,
     pub reverb_sum_sq: f32,
-    pub echo_peak: f32,
-    pub echo_sum_sq: f32,
+    pub stereo_delay_peak: f32,
+    pub stereo_delay_sum_sq: f32,
+    pub tape_delay_peak: f32,
+    pub tape_delay_sum_sq: f32,
     pub master_l_peak: f32,
     pub master_l_sum_sq: f32,
     pub master_r_peak: f32,
@@ -255,12 +286,15 @@ pub struct Mixer {
 
     pub reverb_bus_l: f32,
     pub reverb_bus_r: f32,
-    pub echo_bus_l: f32,
-    pub echo_bus_r: f32,
+    pub stereo_delay_bus_l: f32,
+    pub stereo_delay_bus_r: f32,
+    pub tape_delay_bus_l: f32,
+    pub tape_delay_bus_r: f32,
 
     inputs: Vec<InputStripParams>,
     reverb_return: FxReturnParams,
-    echo_return: FxReturnParams,
+    stereo_delay_return: FxReturnParams,
+    tape_delay_return: FxReturnParams,
     master: MasterParams,
 
     levels: Levels,
@@ -278,19 +312,24 @@ impl Mixer {
             master_r: 0.0,
             reverb_bus_l: 0.0,
             reverb_bus_r: 0.0,
-            echo_bus_l: 0.0,
-            echo_bus_r: 0.0,
+            stereo_delay_bus_l: 0.0,
+            stereo_delay_bus_r: 0.0,
+            tape_delay_bus_l: 0.0,
+            tape_delay_bus_r: 0.0,
             inputs: vec![InputStripParams::default(); num_inputs],
             reverb_return: FxReturnParams::default(),
-            echo_return: FxReturnParams::default(),
+            stereo_delay_return: FxReturnParams::default(),
+            tape_delay_return: FxReturnParams::default(),
             master: MasterParams::default(),
             levels: Levels {
                 input_peaks: vec![0.0; num_inputs],
                 input_sum_sq: vec![0.0; num_inputs],
                 reverb_peak: 0.0,
                 reverb_sum_sq: 0.0,
-                echo_peak: 0.0,
-                echo_sum_sq: 0.0,
+                stereo_delay_peak: 0.0,
+                stereo_delay_sum_sq: 0.0,
+                tape_delay_peak: 0.0,
+                tape_delay_sum_sq: 0.0,
                 master_l_peak: 0.0,
                 master_l_sum_sq: 0.0,
                 master_r_peak: 0.0,
@@ -315,8 +354,10 @@ impl Mixer {
         }
         self.levels.reverb_peak = 0.0;
         self.levels.reverb_sum_sq = 0.0;
-        self.levels.echo_peak = 0.0;
-        self.levels.echo_sum_sq = 0.0;
+        self.levels.stereo_delay_peak = 0.0;
+        self.levels.stereo_delay_sum_sq = 0.0;
+        self.levels.tape_delay_peak = 0.0;
+        self.levels.tape_delay_sum_sq = 0.0;
         self.levels.master_l_peak = 0.0;
         self.levels.master_l_sum_sq = 0.0;
         self.levels.master_r_peak = 0.0;
@@ -345,9 +386,14 @@ impl Mixer {
                     s.send_reverb = (v as f32).clamp(0.0, 1.0);
                 }
             }
-            MixerParam::InputSendEcho(i, v) => {
+            MixerParam::InputSendStereoDelay(i, v) => {
                 if let Some(s) = self.inputs.get_mut(i) {
-                    s.send_echo = (v as f32).clamp(0.0, 1.0);
+                    s.send_stereo_delay = (v as f32).clamp(0.0, 1.0);
+                }
+            }
+            MixerParam::InputSendTapeDelay(i, v) => {
+                if let Some(s) = self.inputs.get_mut(i) {
+                    s.send_tape_delay = (v as f32).clamp(0.0, 1.0);
                 }
             }
             MixerParam::InputSendPreFader(i, v) => {
@@ -364,14 +410,23 @@ impl Mixer {
             MixerParam::ReverbReturnMute(v) => {
                 self.reverb_return.mute = v;
             }
-            MixerParam::EchoReturnGainDb(db) => {
-                self.echo_return.gain = db_to_linear(db as f32);
+            MixerParam::StereoDelayReturnGainDb(db) => {
+                self.stereo_delay_return.gain = db_to_linear(db as f32);
             }
-            MixerParam::EchoReturnPan(v) => {
-                self.echo_return.pan = (v as f32).clamp(-1.0, 1.0);
+            MixerParam::StereoDelayReturnPan(v) => {
+                self.stereo_delay_return.pan = (v as f32).clamp(-1.0, 1.0);
             }
-            MixerParam::EchoReturnMute(v) => {
-                self.echo_return.mute = v;
+            MixerParam::StereoDelayReturnMute(v) => {
+                self.stereo_delay_return.mute = v;
+            }
+            MixerParam::TapeDelayReturnGainDb(db) => {
+                self.tape_delay_return.gain = db_to_linear(db as f32);
+            }
+            MixerParam::TapeDelayReturnPan(v) => {
+                self.tape_delay_return.pan = (v as f32).clamp(-1.0, 1.0);
+            }
+            MixerParam::TapeDelayReturnMute(v) => {
+                self.tape_delay_return.mute = v;
             }
             MixerParam::MasterGainDb(db) => {
                 self.master.gain = db_to_linear(db as f32);
@@ -389,8 +444,10 @@ impl Mixer {
         self.master_r = 0.0;
         self.reverb_bus_l = 0.0;
         self.reverb_bus_r = 0.0;
-        self.echo_bus_l = 0.0;
-        self.echo_bus_r = 0.0;
+        self.stereo_delay_bus_l = 0.0;
+        self.stereo_delay_bus_r = 0.0;
+        self.tape_delay_bus_l = 0.0;
+        self.tape_delay_bus_r = 0.0;
 
         for (i, (sample, strip)) in inputs
             .iter()
@@ -425,14 +482,25 @@ impl Mixer {
 
             self.reverb_bus_l += send_l * strip.send_reverb;
             self.reverb_bus_r += send_r * strip.send_reverb;
-            self.echo_bus_l += send_l * strip.send_echo;
-            self.echo_bus_r += send_r * strip.send_echo;
+            self.stereo_delay_bus_l += send_l * strip.send_stereo_delay;
+            self.stereo_delay_bus_r += send_r * strip.send_stereo_delay;
+            self.tape_delay_bus_l += send_l * strip.send_tape_delay;
+            self.tape_delay_bus_r += send_r * strip.send_tape_delay;
         }
     }
 
     /// Add panned + gained FX returns to the master sum.
+    #[allow(clippy::too_many_arguments)]
     #[inline]
-    pub fn add_returns(&mut self, reverb_l: f32, reverb_r: f32, echo_l: f32, echo_r: f32) {
+    pub fn add_returns(
+        &mut self,
+        reverb_l: f32,
+        reverb_r: f32,
+        delay_l: f32,
+        delay_r: f32,
+        tape_l: f32,
+        tape_r: f32,
+    ) {
         if !self.reverb_return.mute {
             let (gl, gr) = stereo_balance_gains(self.reverb_return.pan);
             let g = self.reverb_return.gain;
@@ -446,18 +514,31 @@ impl Mixer {
             }
             self.levels.reverb_sum_sq += post_l * post_l + post_r * post_r;
         }
-        if !self.echo_return.mute {
-            let (gl, gr) = stereo_balance_gains(self.echo_return.pan);
-            let g = self.echo_return.gain;
-            let post_l = echo_l * g * gl;
-            let post_r = echo_r * g * gr;
+        if !self.stereo_delay_return.mute {
+            let (gl, gr) = stereo_balance_gains(self.stereo_delay_return.pan);
+            let g = self.stereo_delay_return.gain;
+            let post_l = delay_l * g * gl;
+            let post_r = delay_r * g * gr;
             self.master_l += post_l;
             self.master_r += post_r;
             let p = post_l.abs().max(post_r.abs());
-            if p > self.levels.echo_peak {
-                self.levels.echo_peak = p;
+            if p > self.levels.stereo_delay_peak {
+                self.levels.stereo_delay_peak = p;
             }
-            self.levels.echo_sum_sq += post_l * post_l + post_r * post_r;
+            self.levels.stereo_delay_sum_sq += post_l * post_l + post_r * post_r;
+        }
+        if !self.tape_delay_return.mute {
+            let (gl, gr) = stereo_balance_gains(self.tape_delay_return.pan);
+            let g = self.tape_delay_return.gain;
+            let post_l = tape_l * g * gl;
+            let post_r = tape_r * g * gr;
+            self.master_l += post_l;
+            self.master_r += post_r;
+            let p = post_l.abs().max(post_r.abs());
+            if p > self.levels.tape_delay_peak {
+                self.levels.tape_delay_peak = p;
+            }
+            self.levels.tape_delay_sum_sq += post_l * post_l + post_r * post_r;
         }
     }
 
@@ -552,7 +633,7 @@ mod tests {
 
         let peak_l = ac_peak_after_settle(|s| {
             mixer.process_inputs(&[s * 0.5]);
-            mixer.add_returns(0.0, 0.0, 0.0, 0.0);
+            mixer.add_returns(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
             mixer.finalize();
             mixer.master_l
         });
@@ -562,7 +643,7 @@ mod tests {
         mixer.update_param(MixerParam::InputPan(0, -1.0));
         let peak_r = ac_peak_after_settle(|s| {
             mixer.process_inputs(&[s * 0.5]);
-            mixer.add_returns(0.0, 0.0, 0.0, 0.0);
+            mixer.add_returns(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
             mixer.finalize();
             mixer.master_r
         });
@@ -576,7 +657,7 @@ mod tests {
 
         for _ in 0..1000 {
             mixer.process_inputs(&[1.0]);
-            mixer.add_returns(0.0, 0.0, 0.0, 0.0);
+            mixer.add_returns(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
             mixer.finalize();
         }
         assert!(mixer.master_l.abs() < 1e-6);
@@ -626,7 +707,7 @@ mod tests {
 
         let peak = ac_peak_after_settle(|s| {
             mixer.process_inputs(&[s]);
-            mixer.add_returns(0.0, 0.0, 0.0, 0.0);
+            mixer.add_returns(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
             mixer.finalize();
             mixer.master_l
         });
@@ -640,7 +721,7 @@ mod tests {
         mixer.update_param(MixerParam::ReverbReturnPan(0.0)); // identity at center
         let peak_l = ac_peak_after_settle(|s| {
             mixer.process_inputs(&[]);
-            mixer.add_returns(s * 0.5, s * 0.5, 0.0, 0.0);
+            mixer.add_returns(s * 0.5, s * 0.5, 0.0, 0.0, 0.0, 0.0);
             mixer.finalize();
             mixer.master_l
         });
@@ -652,7 +733,7 @@ mod tests {
         let mut mixer = Mixer::new(48_000.0, 1);
         for _ in 0..480_000 {
             mixer.process_inputs(&[0.5]);
-            mixer.add_returns(0.0, 0.0, 0.0, 0.0);
+            mixer.add_returns(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
             mixer.finalize();
         }
         assert!(mixer.master_l.abs() < 1e-3, "master_l={}", mixer.master_l);

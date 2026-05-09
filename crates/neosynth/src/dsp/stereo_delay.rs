@@ -6,7 +6,7 @@ const ECHO_BUFFER_SIZE: usize = 131_072;
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
-pub struct EchoParams {
+pub struct StereoDelayParams {
     pub send: f32,
     pub fb_local: f32,
     pub fb_cross: f32,
@@ -15,7 +15,7 @@ pub struct EchoParams {
     pub lpf_hz: f32,
 }
 
-impl Default for EchoParams {
+impl Default for StereoDelayParams {
     fn default() -> Self {
         Self {
             send: 1.0,
@@ -29,7 +29,7 @@ impl Default for EchoParams {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum EchoParam {
+pub enum StereoDelayParam {
     Send(f64),
     FbLocal(f64),
     FbCross(f64),
@@ -39,7 +39,7 @@ pub enum EchoParam {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EchoParamKind {
+pub enum StereoDelayParamKind {
     Send,
     FbLocal,
     FbCross,
@@ -48,9 +48,9 @@ pub enum EchoParamKind {
     LpfHz,
 }
 
-impl FloatParams for EchoParamKind {
-    type Param = EchoParam;
-    type State = EchoParams;
+impl FloatParams for StereoDelayParamKind {
+    type Param = StereoDelayParam;
+    type State = StereoDelayParams;
 
     fn all() -> &'static [Self] {
         &[
@@ -63,14 +63,14 @@ impl FloatParams for EchoParamKind {
         ]
     }
 
-    fn build(self, value: f64) -> EchoParam {
+    fn build(self, value: f64) -> StereoDelayParam {
         match self {
-            Self::Send => EchoParam::Send(value),
-            Self::FbLocal => EchoParam::FbLocal(value),
-            Self::FbCross => EchoParam::FbCross(value),
-            Self::TimeLMs => EchoParam::TimeLMs(value),
-            Self::TimeRMs => EchoParam::TimeRMs(value),
-            Self::LpfHz => EchoParam::LpfHz(value),
+            Self::Send => StereoDelayParam::Send(value),
+            Self::FbLocal => StereoDelayParam::FbLocal(value),
+            Self::FbCross => StereoDelayParam::FbCross(value),
+            Self::TimeLMs => StereoDelayParam::TimeLMs(value),
+            Self::TimeRMs => StereoDelayParam::TimeRMs(value),
+            Self::LpfHz => StereoDelayParam::LpfHz(value),
         }
     }
 
@@ -97,7 +97,7 @@ impl FloatParams for EchoParamKind {
         }
     }
 
-    fn read(self, p: &EchoParams) -> f64 {
+    fn read(self, p: &StereoDelayParams) -> f64 {
         match self {
             Self::Send => p.send as f64,
             Self::FbLocal => p.fb_local as f64,
@@ -109,7 +109,7 @@ impl FloatParams for EchoParamKind {
     }
 
     fn osc_namespace() -> &'static str {
-        "/echo"
+        "/stereo_delay"
     }
 
     fn osc_segment(self) -> &'static str {
@@ -124,11 +124,11 @@ impl FloatParams for EchoParamKind {
     }
 }
 
-pub struct Echo {
+pub struct StereoDelay {
     pub out_l: f32,
     pub out_r: f32,
 
-    params: EchoParams,
+    params: StereoDelayParams,
     sample_rate: f32,
 
     warp_const_pi: f32,
@@ -167,7 +167,7 @@ pub struct Echo {
     buffer_r: Vec<f32>,
 }
 
-impl Echo {
+impl StereoDelay {
     pub fn new(sample_rate: f32, upsample_factor: u32) -> Self {
         let buffer_size = ECHO_BUFFER_SIZE * upsample_factor as usize;
         let buffer_sz_m1 = buffer_size as i32 - 1;
@@ -183,10 +183,10 @@ impl Echo {
 
         let lp2hz_b0 = (2.0 * TWO_PI / sample_rate).min(1.9);
 
-        let mut echo = Self {
+        let mut stereo_delay = Self {
             out_l: 0.0,
             out_r: 0.0,
-            params: EchoParams::default(),
+            params: StereoDelayParams::default(),
             sample_rate,
             warp_const_pi,
             freq_clip_min,
@@ -217,24 +217,24 @@ impl Echo {
             buffer_l: vec![0.0; buffer_size],
             buffer_r: vec![0.0; buffer_size],
         };
-        echo.refresh();
-        echo
+        stereo_delay.refresh();
+        stereo_delay
     }
 
     #[cfg(test)]
-    pub fn set_params(&mut self, params: EchoParams) {
+    pub fn set_params(&mut self, params: StereoDelayParams) {
         self.params = params;
         self.refresh();
     }
 
-    pub fn update_param(&mut self, param: EchoParam) {
+    pub fn update_param(&mut self, param: StereoDelayParam) {
         match param {
-            EchoParam::Send(v) => self.params.send = v as f32,
-            EchoParam::FbLocal(v) => self.params.fb_local = v as f32,
-            EchoParam::FbCross(v) => self.params.fb_cross = v as f32,
-            EchoParam::TimeLMs(v) => self.params.time_l_ms = v as f32,
-            EchoParam::TimeRMs(v) => self.params.time_r_ms = v as f32,
-            EchoParam::LpfHz(v) => self.params.lpf_hz = v as f32,
+            StereoDelayParam::Send(v) => self.params.send = v as f32,
+            StereoDelayParam::FbLocal(v) => self.params.fb_local = v as f32,
+            StereoDelayParam::FbCross(v) => self.params.fb_cross = v as f32,
+            StereoDelayParam::TimeLMs(v) => self.params.time_l_ms = v as f32,
+            StereoDelayParam::TimeRMs(v) => self.params.time_r_ms = v as f32,
+            StereoDelayParam::LpfHz(v) => self.params.lpf_hz = v as f32,
         }
         self.refresh();
     }
@@ -351,8 +351,8 @@ impl Echo {
 mod tests {
     use super::*;
 
-    fn no_feedback_params(time_ms: f32) -> EchoParams {
-        EchoParams {
+    fn no_feedback_params(time_ms: f32) -> StereoDelayParams {
+        StereoDelayParams {
             send: 1.0,
             fb_local: 0.0,
             fb_cross: 0.0,
@@ -362,57 +362,57 @@ mod tests {
         }
     }
 
-    fn warm_up(echo: &mut Echo, samples: usize) {
+    fn warm_up(stereo_delay: &mut StereoDelay, samples: usize) {
         for _ in 0..samples {
-            echo.apply(0.0, 0.0);
+            stereo_delay.apply(0.0, 0.0);
         }
     }
 
     #[test]
     fn silence_in_silence_out() {
-        let mut echo = Echo::new(48_000.0, 1);
-        echo.set_params(EchoParams::default());
+        let mut stereo_delay = StereoDelay::new(48_000.0, 1);
+        stereo_delay.set_params(StereoDelayParams::default());
         for _ in 0..96_000 {
-            echo.apply(0.0, 0.0);
-            assert!(echo.out_l.is_finite() && echo.out_r.is_finite());
-            assert!(echo.out_l.abs() < 1e-6);
-            assert!(echo.out_r.abs() < 1e-6);
+            stereo_delay.apply(0.0, 0.0);
+            assert!(stereo_delay.out_l.is_finite() && stereo_delay.out_r.is_finite());
+            assert!(stereo_delay.out_l.abs() < 1e-6);
+            assert!(stereo_delay.out_r.abs() < 1e-6);
         }
     }
 
     #[test]
     fn impulse_creates_delayed_tap() {
         let time_ms = 100.0;
-        let mut echo = Echo::new(48_000.0, 1);
-        echo.set_params(no_feedback_params(time_ms));
-        warm_up(&mut echo, 96_000);
+        let mut stereo_delay = StereoDelay::new(48_000.0, 1);
+        stereo_delay.set_params(no_feedback_params(time_ms));
+        warm_up(&mut stereo_delay, 96_000);
 
-        echo.apply(1.0, 0.0);
+        stereo_delay.apply(1.0, 0.0);
 
         let expected_delay = (time_ms * 0.001 * 48_000.0) as i32;
         let mut peak = 0.0f32;
         let mut peak_at: i32 = 0;
         let scan_len = expected_delay + 2_000;
         for i in 0..scan_len {
-            echo.apply(0.0, 0.0);
-            if echo.out_l.abs() > peak {
-                peak = echo.out_l.abs();
+            stereo_delay.apply(0.0, 0.0);
+            if stereo_delay.out_l.abs() > peak {
+                peak = stereo_delay.out_l.abs();
                 peak_at = i;
             }
         }
 
-        assert!(peak > 0.001, "no echo detected, peak={peak}");
+        assert!(peak > 0.001, "no stereo_delay detected, peak={peak}");
         let delta = (peak_at - expected_delay).abs();
         assert!(
             delta < 200,
-            "echo arrived at sample {peak_at}, expected ~{expected_delay} (delta={delta})"
+            "stereo_delay arrived at sample {peak_at}, expected ~{expected_delay} (delta={delta})"
         );
     }
 
     #[test]
     fn feedback_decays_under_unity_gain() {
-        let mut echo = Echo::new(48_000.0, 1);
-        echo.set_params(EchoParams {
+        let mut stereo_delay = StereoDelay::new(48_000.0, 1);
+        stereo_delay.set_params(StereoDelayParams {
             send: 1.0,
             fb_local: 0.5,
             fb_cross: 0.0,
@@ -420,35 +420,35 @@ mod tests {
             time_r_ms: 100.0,
             lpf_hz: 8_000.0,
         });
-        warm_up(&mut echo, 96_000);
+        warm_up(&mut stereo_delay, 96_000);
 
-        echo.apply(1.0, 1.0);
+        stereo_delay.apply(1.0, 1.0);
         let mut peak = 0.0f32;
         for _ in 0..480_000 {
-            echo.apply(0.0, 0.0);
-            assert!(echo.out_l.is_finite() && echo.out_r.is_finite());
-            peak = peak.max(echo.out_l.abs()).max(echo.out_r.abs());
+            stereo_delay.apply(0.0, 0.0);
+            assert!(stereo_delay.out_l.is_finite() && stereo_delay.out_r.is_finite());
+            peak = peak.max(stereo_delay.out_l.abs()).max(stereo_delay.out_r.abs());
         }
-        assert!(peak < 5.0, "echo amplified beyond bound: {peak}");
+        assert!(peak < 5.0, "stereo_delay amplified beyond bound: {peak}");
     }
 
     #[test]
     fn no_send_no_output() {
-        let mut echo = Echo::new(48_000.0, 1);
-        echo.set_params(EchoParams {
+        let mut stereo_delay = StereoDelay::new(48_000.0, 1);
+        stereo_delay.set_params(StereoDelayParams {
             send: 0.0,
-            ..EchoParams::default()
+            ..StereoDelayParams::default()
         });
-        warm_up(&mut echo, 4_800);
+        warm_up(&mut stereo_delay, 4_800);
 
         for _ in 0..48_000 {
-            echo.apply(1.0, 1.0);
+            stereo_delay.apply(1.0, 1.0);
         }
         assert!(
-            echo.out_l.abs() < 1e-6 && echo.out_r.abs() < 1e-6,
-            "send=0 should silence echo, got ({}, {})",
-            echo.out_l,
-            echo.out_r
+            stereo_delay.out_l.abs() < 1e-6 && stereo_delay.out_r.abs() < 1e-6,
+            "send=0 should silence stereo_delay, got ({}, {})",
+            stereo_delay.out_l,
+            stereo_delay.out_r
         );
     }
 }

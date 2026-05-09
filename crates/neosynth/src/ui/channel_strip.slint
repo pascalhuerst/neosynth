@@ -207,14 +207,16 @@ export component InputChannelStrip inherits Rectangle {
     in property <float> initial_pan: 0;
     in property <bool> initial_mute: false;
     in property <float> initial_send_reverb: 0;
-    in property <float> initial_send_echo: 0;
+    in property <float> initial_send_stereo_delay: 0;
+    in property <float> initial_send_tape_delay: 0;
     in property <bool> initial_send_pre_fader: false;
 
     callback gain-changed(int, float);
     callback pan-changed(int, float);
     callback mute-changed(int, bool);
     callback send-reverb-changed(int, float);
-    callback send-echo-changed(int, float);
+    callback send-stereo-delay-changed(int, float);
+    callback send-tape-delay-changed(int, float);
     callback send-pre-fader-changed(int, bool);
 
     // Live fader/slider values — kept in two-way binding with the controls
@@ -222,7 +224,8 @@ export component InputChannelStrip inherits Rectangle {
     property <float> live_gain_db: root.initial_gain_db;
     property <float> live_pan: root.initial_pan;
     property <float> live_send_reverb: root.initial_send_reverb;
-    property <float> live_send_echo: root.initial_send_echo;
+    property <float> live_send_stereo_delay: root.initial_send_stereo_delay;
+    property <float> live_send_tape_delay: root.initial_send_tape_delay;
 
     width: 96px;
     background: #1c1c1f;
@@ -254,12 +257,21 @@ export component InputChannelStrip inherits Rectangle {
         }
 
         Text {
-            text: "Echo: " + Math.round(root.live_send_echo * 100) / 100;
+            text: "Delay: " + Math.round(root.live_send_stereo_delay * 100) / 100;
             font-size: 9px; color: #8a8a90;
         }
         Slider {
-            minimum: 0; maximum: 1; value <=> root.live_send_echo;
-            changed(v) => { root.send-echo-changed(root.index, v); }
+            minimum: 0; maximum: 1; value <=> root.live_send_stereo_delay;
+            changed(v) => { root.send-stereo-delay-changed(root.index, v); }
+        }
+
+        Text {
+            text: "Tape: " + Math.round(root.live_send_tape_delay * 100) / 100;
+            font-size: 9px; color: #8a8a90;
+        }
+        Slider {
+            minimum: 0; maximum: 1; value <=> root.live_send_tape_delay;
+            changed(v) => { root.send-tape-delay-changed(root.index, v); }
         }
 
         CheckBox {

@@ -2,10 +2,11 @@ use crate::audio::{
     EngineTelemetry, InputParameterRingBufferProducer, InputParameters, MetersOutput,
 };
 use crate::dsp::compressor::CompressorParamKind;
-use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::MixerParam;
 use crate::dsp::param::FloatParams;
 use crate::dsp::reverb::ReverbParamKind;
+use crate::dsp::stereo_delay::StereoDelayParamKind;
+use crate::dsp::tape_delay::TapeDelayParamKind;
 use crate::persist::{AppState, PersistableState};
 
 use anyhow::Result;
@@ -68,7 +69,8 @@ impl MeterDisplay {
 struct MeterDisplays {
     inputs: Vec<MeterDisplay>,
     reverb: MeterDisplay,
-    echo: MeterDisplay,
+    stereo_delay: MeterDisplay,
+    tape_delay: MeterDisplay,
     master_l: MeterDisplay,
     master_r: MeterDisplay,
 }
@@ -116,12 +118,15 @@ pub fn run(
 
     // ----- Seed initial slider positions from the loaded state -----
 
-    // Reverb / echo float-param models.
+    // Reverb / stereo_delay float-param models.
     ui.set_reverb_params(ModelRc::new(VecModel::from(
         build_float_param_model::<ReverbParamKind>(&loaded.reverb),
     )));
-    ui.set_echo_params(ModelRc::new(VecModel::from(
-        build_float_param_model::<EchoParamKind>(&loaded.echo),
+    ui.set_stereo_delay_params(ModelRc::new(VecModel::from(
+        build_float_param_model::<StereoDelayParamKind>(&loaded.stereo_delay),
+    )));
+    ui.set_tape_delay_params(ModelRc::new(VecModel::from(
+        build_float_param_model::<TapeDelayParamKind>(&loaded.tape_delay),
     )));
     ui.set_compressor_params(ModelRc::new(VecModel::from(
         build_float_param_model::<CompressorParamKind>(&loaded.compressor),
@@ -137,7 +142,8 @@ pub fn run(
             pan: s.pan,
             mute: s.mute,
             send_reverb: s.send_reverb,
-            send_echo: s.send_echo,
+            send_stereo_delay: s.send_stereo_delay,
+            send_tape_delay: s.send_tape_delay,
             send_pre_fader: s.send_pre_fader,
         })
         .collect();
@@ -149,10 +155,15 @@ pub fn run(
         pan: loaded.mixer.reverb_return.pan,
         mute: loaded.mixer.reverb_return.mute,
     });
-    ui.set_echo_return_init(FxReturnInit {
-        gain_db: loaded.mixer.echo_return.gain_db,
-        pan: loaded.mixer.echo_return.pan,
-        mute: loaded.mixer.echo_return.mute,
+    ui.set_stereo_delay_return_init(FxReturnInit {
+        gain_db: loaded.mixer.stereo_delay_return.gain_db,
+        pan: loaded.mixer.stereo_delay_return.pan,
+        mute: loaded.mixer.stereo_delay_return.mute,
+    });
+    ui.set_tape_delay_return_init(FxReturnInit {
+        gain_db: loaded.mixer.tape_delay_return.gain_db,
+        pan: loaded.mixer.tape_delay_return.pan,
+        mute: loaded.mixer.tape_delay_return.mute,
     });
     ui.set_master_init_gain_db(loaded.mixer.master_gain_db);
 
@@ -203,9 +214,17 @@ pub fn run(
     }
     {
         let push = push.clone();
-        ui.on_echo_param_changed(move |idx: i32, v: f32| {
-            if let Some(&kind) = EchoParamKind::all().get(idx as usize) {
-                push(InputParameters::Echo(kind.build(v as f64)));
+        ui.on_stereo_delay_param_changed(move |idx: i32, v: f32| {
+            if let Some(&kind) = StereoDelayParamKind::all().get(idx as usize) {
+                push(InputParameters::StereoDelay(kind.build(v as f64)));
+            }
+        });
+    }
+    {
+        let push = push.clone();
+        ui.on_tape_delay_param_changed(move |idx: i32, v: f32| {
+            if let Some(&kind) = TapeDelayParamKind::all().get(idx as usize) {
+                push(InputParameters::TapeDelay(kind.build(v as f64)));
             }
         });
     }
@@ -222,15 +241,19 @@ pub fn run(
     ui.on_input_pan_changed(make_indexed_mixer_f(MixerParam::InputPan));
     ui.on_input_mute_changed(make_indexed_mixer_b(MixerParam::InputMute));
     ui.on_input_send_reverb_changed(make_indexed_mixer_f(MixerParam::InputSendReverb));
-    ui.on_input_send_echo_changed(make_indexed_mixer_f(MixerParam::InputSendEcho));
+    ui.on_input_send_stereo_delay_changed(make_indexed_mixer_f(MixerParam::InputSendStereoDelay));
+    ui.on_input_send_tape_delay_changed(make_indexed_mixer_f(MixerParam::InputSendTapeDelay));
     ui.on_input_send_pre_fader_changed(make_indexed_mixer_b(MixerParam::InputSendPreFader));
 
     ui.on_reverb_return_gain_changed(make_mixer(MixerParam::ReverbReturnGainDb));
     ui.on_reverb_return_pan_changed(make_mixer(MixerParam::ReverbReturnPan));
     ui.on_reverb_return_mute_changed(make_mixer_bool(MixerParam::ReverbReturnMute));
-    ui.on_echo_return_gain_changed(make_mixer(MixerParam::EchoReturnGainDb));
-    ui.on_echo_return_pan_changed(make_mixer(MixerParam::EchoReturnPan));
-    ui.on_echo_return_mute_changed(make_mixer_bool(MixerParam::EchoReturnMute));
+    ui.on_stereo_delay_return_gain_changed(make_mixer(MixerParam::StereoDelayReturnGainDb));
+    ui.on_stereo_delay_return_pan_changed(make_mixer(MixerParam::StereoDelayReturnPan));
+    ui.on_stereo_delay_return_mute_changed(make_mixer_bool(MixerParam::StereoDelayReturnMute));
+    ui.on_tape_delay_return_gain_changed(make_mixer(MixerParam::TapeDelayReturnGainDb));
+    ui.on_tape_delay_return_pan_changed(make_mixer(MixerParam::TapeDelayReturnPan));
+    ui.on_tape_delay_return_mute_changed(make_mixer_bool(MixerParam::TapeDelayReturnMute));
 
     ui.on_master_gain_changed(make_mixer(MixerParam::MasterGainDb));
 
@@ -250,10 +273,12 @@ pub fn run(
     }
 
     // ----- Meter timer -----
+    #[allow(clippy::needless_update)]
     let displays: Rc<RefCell<MeterDisplays>> = Rc::new(RefCell::new(MeterDisplays {
         inputs: vec![MeterDisplay::default(); num_inputs],
         reverb: MeterDisplay::default(),
-        echo: MeterDisplay::default(),
+        stereo_delay: MeterDisplay::default(),
+        tape_delay: MeterDisplay::default(),
         master_l: MeterDisplay::default(),
         master_r: MeterDisplay::default(),
     }));
@@ -309,10 +334,15 @@ pub fn run(
                 ui.set_reverb_peak(linear_to_pos(d.reverb.peak));
                 ui.set_reverb_rms(linear_to_pos(d.reverb.rms));
 
-                let (ep, er) = meters.load_echo();
-                d.echo.step(ep, er);
-                ui.set_echo_peak(linear_to_pos(d.echo.peak));
-                ui.set_echo_rms(linear_to_pos(d.echo.rms));
+                let (ep, er) = meters.load_stereo_delay();
+                d.stereo_delay.step(ep, er);
+                ui.set_stereo_delay_peak(linear_to_pos(d.stereo_delay.peak));
+                ui.set_stereo_delay_rms(linear_to_pos(d.stereo_delay.rms));
+
+                let (tp, tr) = meters.load_tape_delay();
+                d.tape_delay.step(tp, tr);
+                ui.set_tape_delay_peak(linear_to_pos(d.tape_delay.peak));
+                ui.set_tape_delay_rms(linear_to_pos(d.tape_delay.rms));
 
                 let ((mlp, mlr), (mrp, mrr)) = meters.load_master();
                 d.master_l.step(mlp, mlr);

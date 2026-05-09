@@ -59,7 +59,7 @@ const RECV_TIMEOUT: Duration = Duration::from_millis(20);
 ///
 /// * `/meters/input/{idx}/peak`, `/meters/input/{idx}/rms` — per input strip
 /// * `/meters/reverb/peak`, `/meters/reverb/rms`
-/// * `/meters/echo/peak`, `/meters/echo/rms`
+/// * `/meters/stereo_delay/peak`, `/meters/stereo_delay/rms`
 /// * `/meters/master/l/peak`, `/meters/master/l/rms`,
 ///    `/meters/master/r/peak`, `/meters/master/r/rms`
 /// * `/meters/compressor/gr_db`     f  (master compressor peak gain reduction)
@@ -335,9 +335,13 @@ fn broadcast(
     content.push(make_msg("/meters/reverb/peak".into(), rp));
     content.push(make_msg("/meters/reverb/rms".into(), rr));
 
-    let (ep, er) = meters.load_echo();
-    content.push(make_msg("/meters/echo/peak".into(), ep));
-    content.push(make_msg("/meters/echo/rms".into(), er));
+    let (ep, er) = meters.load_stereo_delay();
+    content.push(make_msg("/meters/stereo_delay/peak".into(), ep));
+    content.push(make_msg("/meters/stereo_delay/rms".into(), er));
+
+    let (tp, tr) = meters.load_tape_delay();
+    content.push(make_msg("/meters/tape_delay/peak".into(), tp));
+    content.push(make_msg("/meters/tape_delay/rms".into(), tr));
 
     let ((mlp, mlr), (mrp, mrr)) = meters.load_master();
     content.push(make_msg("/meters/master/l/peak".into(), mlp));

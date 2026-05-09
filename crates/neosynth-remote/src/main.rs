@@ -39,7 +39,7 @@ struct Param {
     path: String,
     kind: ParamKind,
     label: String,
-    /// One of "Reverb", "Echo", "Master", "Reverb Return", "Echo Return",
+    /// One of "Reverb", "Stereo Delay", "Master", "Reverb Return", "Stereo Delay Return",
     /// "Input N". Used to bucket controls in the UI.
     group: String,
     /// Sort order within group; lower = earlier.
@@ -228,10 +228,32 @@ fn group_and_order(path: &str) -> (String, usize) {
             reverb_echo_order(rest, &["size", "feedback", "balance", "pre_delay_ms", "hpf_hz", "lpf_hz", "chorus", "send"]),
         );
     }
-    if let Some(rest) = path.strip_prefix("/echo/") {
+    if let Some(rest) = path.strip_prefix("/stereo_delay/") {
         return (
-            "Echo".into(),
+            "Stereo Delay".into(),
             reverb_echo_order(rest, &["send", "fb_local", "fb_cross", "time_l_ms", "time_r_ms", "lpf_hz"]),
+        );
+    }
+    if let Some(rest) = path.strip_prefix("/tape_delay/") {
+        return (
+            "Tape Delay".into(),
+            reverb_echo_order(
+                rest,
+                &[
+                    "send",
+                    "repeat_rate_ms",
+                    "intensity",
+                    "h1_level",
+                    "h2_level",
+                    "h3_level",
+                    "saturation_drive",
+                    "hf_rolloff_hz",
+                    "wow_depth",
+                    "wow_rate_hz",
+                    "flutter_depth",
+                    "flutter_rate_hz",
+                ],
+            ),
         );
     }
     if let Some(rest) = path.strip_prefix("/compressor/") {
@@ -249,8 +271,11 @@ fn group_and_order(path: &str) -> (String, usize) {
     if let Some(rest) = path.strip_prefix("/mixer/reverb_return/") {
         return ("Reverb Return".into(), mixer_segment_order(rest));
     }
-    if let Some(rest) = path.strip_prefix("/mixer/echo_return/") {
-        return ("Echo Return".into(), mixer_segment_order(rest));
+    if let Some(rest) = path.strip_prefix("/mixer/stereo_delay_return/") {
+        return ("Stereo Delay Return".into(), mixer_segment_order(rest));
+    }
+    if let Some(rest) = path.strip_prefix("/mixer/tape_delay_return/") {
+        return ("Tape Delay Return".into(), mixer_segment_order(rest));
     }
     if let Some(rest) = path.strip_prefix("/mixer/input/") {
         // /mixer/input/N/segment
@@ -273,8 +298,9 @@ fn mixer_segment_order(seg: &str) -> usize {
         "pan" => 1,
         "mute" => 2,
         "send_reverb" => 3,
-        "send_echo" => 4,
-        "send_pre_fader" => 5,
+        "send_stereo_delay" => 4,
+        "send_tape_delay" => 5,
+        "send_pre_fader" => 6,
         _ => 99,
     }
 }
@@ -320,11 +346,13 @@ fn build_groups_model(
     let group_priority = |name: &str| -> usize {
         match name {
             "Reverb" => 0,
-            "Echo" => 1,
-            "Compressor" => 2,
-            "Master" => 3,
-            "Reverb Return" => 4,
-            "Echo Return" => 5,
+            "Stereo Delay" => 1,
+            "Tape Delay" => 2,
+            "Compressor" => 3,
+            "Master" => 4,
+            "Reverb Return" => 5,
+            "Stereo Delay Return" => 6,
+            "Tape Delay Return" => 7,
             n if n.starts_with("Input ") => {
                 10 + n.trim_start_matches("Input ").parse::<usize>().unwrap_or(0)
             }

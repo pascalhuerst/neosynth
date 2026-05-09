@@ -38,7 +38,8 @@ impl MeterCell {
 pub struct MetersOutput {
     inputs: Vec<MeterCell>,
     reverb: MeterCell,
-    echo: MeterCell,
+    stereo_delay: MeterCell,
+    tape_delay: MeterCell,
     master_l: MeterCell,
     master_r: MeterCell,
     /// Master compressor peak gain reduction in dB (always ≥ 0). Single
@@ -51,7 +52,8 @@ impl MetersOutput {
         Self {
             inputs: (0..num_inputs).map(|_| MeterCell::new()).collect(),
             reverb: MeterCell::new(),
-            echo: MeterCell::new(),
+            stereo_delay: MeterCell::new(),
+            tape_delay: MeterCell::new(),
             master_l: MeterCell::new(),
             master_r: MeterCell::new(),
             compressor_gr_db: AtomicU32::new(0),
@@ -96,13 +98,23 @@ impl MetersOutput {
     }
 
     #[inline]
-    pub fn store_echo(&self, peak: f32, rms: f32) {
-        self.echo.store(peak, rms);
+    pub fn store_stereo_delay(&self, peak: f32, rms: f32) {
+        self.stereo_delay.store(peak, rms);
     }
 
     #[inline]
-    pub fn load_echo(&self) -> (f32, f32) {
-        self.echo.load()
+    pub fn load_stereo_delay(&self) -> (f32, f32) {
+        self.stereo_delay.load()
+    }
+
+    #[inline]
+    pub fn store_tape_delay(&self, peak: f32, rms: f32) {
+        self.tape_delay.store(peak, rms);
+    }
+
+    #[inline]
+    pub fn load_tape_delay(&self) -> (f32, f32) {
+        self.tape_delay.load()
     }
 
     #[inline]
