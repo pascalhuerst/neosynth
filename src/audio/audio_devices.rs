@@ -1,7 +1,7 @@
 use super::sample_format::SampleFormat;
 use alsa::pcm::{Access, HwParams};
 use alsa::{Direction, PCM};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 
 /// Default buffer size in frames, applied to both capture and playback.
 /// 512 frames at 48kHz = ~10.7ms per side.
@@ -75,6 +75,28 @@ fn configure_pcm(
     Ok(())
 }
 
+/// Configure software params for one PCM. The reference project sets these
+/// explicitly to avoid relying on ALSA defaults that vary by driver:
+///   * `avail_min = period_size`     — wake us per-period, not per-buffer
+///   * playback `start_threshold = buffer_size` — don't begin playback until
+///     the buffer is fully primed (avoids a guaranteed first underrun)
+///   * capture `start_threshold  = 1` — start immediately on the first frame
+fn configure_sw_params(pcm: &PCM, direction: Direction) -> Result<()> {
+    let hwp = pcm.hw_params_current()?;
+    let buffer_size = hwp.get_buffer_size()?;
+    let period_size = hwp.get_period_size()?;
+
+    let swp = pcm.sw_params_current()?;
+    swp.set_avail_min(period_size)?;
+    let start_threshold = match direction {
+        Direction::Playback => buffer_size,
+        Direction::Capture => 1,
+    };
+    swp.set_start_threshold(start_threshold)?;
+    pcm.sw_params(&swp)?;
+    Ok(())
+}
+
 pub fn configure_audio_devices(settings: &AlsaSettings) -> Result<(PCM, PCM, usize)> {
     let target_buffer = settings
         .buffer_size
@@ -121,6 +143,26 @@ pub fn configure_audio_devices(settings: &AlsaSettings) -> Result<(PCM, PCM, usi
             pb_period
         );
     }
+
+    // Sanity: buffer_size must be an integer multiple of period_size, else our
+    // periods-per-buffer math (used for cpu-usage aggregation) breaks.
+    if pb_buffer % pb_period != 0 || pb_buffer / pb_period < 1 {
+        return Err(anyhow!(
+            "Playback buffer_size {} is not a positive multiple of period_size {}",
+            pb_buffer,
+            pb_period
+        ));
+    }
+    if cap_buffer % cap_period != 0 || cap_buffer / cap_period < 1 {
+        return Err(anyhow!(
+            "Capture buffer_size {} is not a positive multiple of period_size {}",
+            cap_buffer,
+            cap_period
+        ));
+    }
+
+    configure_sw_params(&capture, Direction::Capture)?;
+    configure_sw_params(&playback, Direction::Playback)?;
 
     let total_latency_ms =
         (cap_buffer + pb_buffer) as f64 / settings.sample_rate as f64 * 1000.0;

@@ -19,6 +19,7 @@ use persist::{AppState, PersistableState, default_state_path, spawn_persister};
 const PARAM_CHANNEL_CAPACITY: usize = 1024;
 const MIDI_CHANNEL_CAPACITY: usize = 256;
 const OSC_CHANNEL_CAPACITY: usize = 256;
+const XRUN_CHANNEL_CAPACITY: usize = 64;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "neosynth realtime audio engine")]
@@ -50,9 +51,15 @@ struct Cli {
     #[arg(long)]
     period_size: Option<u32>,
 
-    /// CPU core to pin the audio thread to (SCHED_FIFO + affinity)
+    /// CPU core to pin the ALSA callback thread to (SCHED_FIFO + affinity).
+    /// Should be an isolated core (`isolcpus=` / `nohz_full=`) for low jitter.
     #[arg(long, default_value_t = 2)]
     audio_cpu: usize,
+
+    /// CPU core to pin the DSP worker thread to. Should be a *different*
+    /// isolated core from `--audio-cpu` so the two RT threads don't fight.
+    #[arg(long, default_value_t = 3)]
+    worker_cpu: usize,
 
     /// Number of input channels to capture (one mixer strip per channel)
     #[arg(long, default_value_t = 2)]
@@ -83,6 +90,24 @@ fn wait_for_shutdown(running: &AtomicBool) {
     while running.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// Drain xrun events emitted by the callback thread and log them. Only used
+/// in headless mode; the UI has its own consumer.
+fn spawn_headless_xrun_logger(
+    running: Arc<AtomicBool>,
+    consumer: audio::XrunEventsConsumer,
+) -> std::thread::JoinHandle<()> {
+    use ringbuf::traits::Consumer;
+    std::thread::spawn(move || {
+        let mut consumer = consumer;
+        while running.load(Ordering::Relaxed) {
+            while let Some(ev) = consumer.try_pop() {
+                tracing::warn!("xrun: {:?} at t={}us", ev.kind, ev.timestamp_us);
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    })
 }
 
 /// Periodically log the peak DSP load measured since the last tick. Only used
@@ -121,7 +146,7 @@ fn main() -> Result<()> {
         .init();
 
     tracing::info!(
-        "Starting: input={}, output={}, sample_rate={}, sample_format={:?}, in_ch={}, buffer_size={:?}, period_size={:?}, audio_cpu={}",
+        "Starting: input={}, output={}, sample_rate={}, sample_format={:?}, in_ch={}, buffer_size={:?}, period_size={:?}, audio_cpu={}, worker_cpu={}",
         cli.input_device,
         cli.output_device,
         cli.sample_rate,
@@ -130,6 +155,7 @@ fn main() -> Result<()> {
         cli.buffer_size,
         cli.period_size,
         cli.audio_cpu,
+        cli.worker_cpu,
     );
 
     let running = Arc::new(AtomicBool::new(true));
@@ -160,6 +186,7 @@ fn main() -> Result<()> {
     let osc_params = audio::create_parameter_channel(OSC_CHANNEL_CAPACITY);
     let meters = Arc::new(audio::MetersOutput::new(cli.input_channels as usize));
     let telemetry = Arc::new(audio::EngineTelemetry::new());
+    let xrun_channel = audio::create_xrun_channel(XRUN_CHANNEL_CAPACITY);
 
     // ----- Engine -----
     let mut engine = audio::Engine::new(cli.input_device, cli.output_device, cli.sample_rate);
@@ -172,14 +199,16 @@ fn main() -> Result<()> {
     }
     engine.set_input_channels(cli.input_channels);
 
-    let audio_handle = engine.run(
+    let audio_handles = engine.run(
         running.clone(),
         ui_params.consumer,
         midi_params.consumer,
         osc_params.consumer,
         meters.clone(),
         telemetry.clone(),
+        xrun_channel.producer,
         cli.audio_cpu,
+        cli.worker_cpu,
     )?;
 
     // Seed the audio thread with the loaded state by pushing one event per
@@ -252,8 +281,10 @@ fn main() -> Result<()> {
             telemetry.clone(),
             HEADLESS_LOAD_LOG_INTERVAL,
         );
+        let xrun_logger = spawn_headless_xrun_logger(running.clone(), xrun_channel.consumer);
         wait_for_shutdown(&running);
         let _ = load_logger.join();
+        let _ = xrun_logger.join();
     } else {
         ui::run(
             ui_producer,
@@ -261,6 +292,7 @@ fn main() -> Result<()> {
             cli.input_channels as usize,
             meters,
             telemetry,
+            xrun_channel.consumer,
             persisted.clone(),
             loaded_state,
         )?;
@@ -285,9 +317,14 @@ fn main() -> Result<()> {
     if let Some(h) = osc_handle {
         let _ = h.join();
     }
-    audio_handle
+    audio_handles
+        .callback
         .join()
-        .map_err(|_| anyhow::anyhow!("audio thread panicked"))?;
+        .map_err(|_| anyhow::anyhow!("callback thread panicked"))?;
+    audio_handles
+        .worker
+        .join()
+        .map_err(|_| anyhow::anyhow!("worker thread panicked"))?;
 
     tracing::info!("Shutdown complete");
     Ok(())

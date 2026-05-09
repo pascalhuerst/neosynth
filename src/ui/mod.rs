@@ -1,6 +1,8 @@
 use crate::audio::{
     EngineTelemetry, InputParameterRingBufferProducer, InputParameters, MetersOutput,
+    XrunEventsConsumer,
 };
+use ringbuf::traits::Consumer as RbConsumer;
 use crate::dsp::echo::EchoParamKind;
 use crate::dsp::mixer::MixerParam;
 use crate::dsp::param::FloatParams;
@@ -89,12 +91,14 @@ fn build_float_param_model<K: FloatParams>(state: &K::State) -> Vec<FloatParam> 
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     producer: InputParameterRingBufferProducer,
     running: Arc<AtomicBool>,
     num_inputs: usize,
     meters: Arc<MetersOutput>,
     telemetry: Arc<EngineTelemetry>,
+    xrun_consumer: XrunEventsConsumer,
     persisted: Arc<Mutex<PersistableState>>,
     loaded: AppState,
 ) -> Result<()> {
@@ -245,6 +249,7 @@ pub fn run(
         master_r: MeterDisplay::default(),
     }));
 
+    let xrun_consumer = Rc::new(RefCell::new(xrun_consumer));
     let meter_timer = slint::Timer::default();
     {
         let ui_weak = ui.as_weak();
@@ -253,6 +258,7 @@ pub fn run(
         let input_peaks = input_peaks_model.clone();
         let input_rms = input_rms_model.clone();
         let displays = displays.clone();
+        let xrun_consumer = xrun_consumer.clone();
         meter_timer.start(
             slint::TimerMode::Repeated,
             Duration::from_millis(METER_TICK_MS),
@@ -262,6 +268,15 @@ pub fn run(
                 };
                 let mut d = displays.borrow_mut();
                 ui.set_dsp_load_pct(telemetry.dsp_load_peak_pct());
+
+                // Drain xrun events. For now, log via tracing — a visible UI
+                // indicator can come later if needed.
+                {
+                    let mut c = xrun_consumer.borrow_mut();
+                    while let Some(ev) = c.try_pop() {
+                        tracing::warn!("xrun: {:?} at t={}us", ev.kind, ev.timestamp_us);
+                    }
+                }
 
                 let n = meters.num_inputs().min(input_peaks.row_count());
                 for i in 0..n {
