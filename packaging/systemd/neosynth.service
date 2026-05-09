@@ -1,0 +1,66 @@
+[Unit]
+Description=neosynth realtime audio engine
+After=sound.target
+Wants=sound.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/neosynth \
+    --input-device hw:0,0,0 \
+    --output-device hw:0,0,0 \
+    --sample-rate 48000 \
+    --buffer-size 128 \
+    --sample-format s24_3be \
+    --no-ui \
+    --audio-cpu 2 \
+    --worker-cpu 3 \
+    --osc-listen 0.0.0.0:9000
+
+Restart=on-failure
+RestartSec=2
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Realtime privileges. CAP_SYS_NICE covers SCHED_FIFO / set_thread_affinity
+# for the audio + worker threads. With this set, no `setcap` on the binary
+# is needed. LimitRTPRIO lets the kernel allow our priority 80 request.
+AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+LimitNICE=-20
+
+# Run as a dedicated unprivileged user with ALSA access. Create with:
+#   useradd --system --no-create-home --shell /usr/sbin/nologin \
+#           --groups audio neosynth
+# If you'd rather run as root, comment these two lines out.
+User=neosynth
+SupplementaryGroups=audio
+
+# State persistence: the engine writes to $XDG_CONFIG_HOME/neosynth/state.toml.
+# StateDirectory= creates /var/lib/neosynth automatically (mode 0750, owned by
+# the User above) and exposes it via the systemd-managed path. Pointing
+# XDG_CONFIG_HOME at it keeps everything inside /var/lib.
+Environment=XDG_CONFIG_HOME=/var/lib
+StateDirectory=neosynth
+StateDirectoryMode=0750
+
+# Sandboxing — minimal, just what realtime audio needs.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+DevicePolicy=closed
+DeviceAllow=char-alsa rw
+
+# Logs go to the journal. Read with: journalctl -u neosynth -f
+StandardOutput=journal
+StandardError=journal
+# Set RUST_LOG=neosynth=debug for more detail; the default is `info`.
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target
