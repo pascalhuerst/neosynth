@@ -9,11 +9,96 @@ export struct ParamRow {
     max: float,
     float-value: float,
     bool-value: bool,
+    /// True when this float is symmetric around zero (e.g. pan, balance).
+    /// The remote renders these with a center-detent fader instead of a
+    /// regular linear slider so 0 is visually distinguished.
+    bipolar: bool,
 }
 
 export struct GroupRow {
     title: string,
     params: [ParamRow],
+}
+
+/// Horizontal fader for parameters symmetric around 0 (pan, balance, …).
+/// Visual cues:
+///   * Center tick mark on the track
+///   * Fill bar grows from the center toward the thumb (left or right)
+///   * Snap-to-zero detent within ~3 % of midrange so the user can find center
+component BipolarFader {
+    in property <float> minimum: -1;
+    in property <float> maximum: 1;
+    in-out property <float> value: 0;
+    callback changed(float);
+
+    height: 22px;
+    min-width: 80px;
+
+    property <float> norm: clamp((root.value - root.minimum) / (root.maximum - root.minimum), 0, 1);
+    property <length> thumb-x: root.width * norm;
+    property <length> center-x: root.width / 2;
+
+    // Track
+    Rectangle {
+        x: 0;
+        y: (parent.height - self.height) / 2;
+        width: parent.width;
+        height: 4px;
+        background: #2a2a2e;
+        border-radius: 2px;
+    }
+
+    // Fill from center toward thumb
+    Rectangle {
+        x: Math.min(center-x, thumb-x);
+        y: (parent.height - self.height) / 2;
+        width: Math.abs(thumb-x - center-x);
+        height: 4px;
+        background: #4a90e2;
+        border-radius: 2px;
+    }
+
+    // Center tick
+    Rectangle {
+        x: center-x - 1px;
+        y: (parent.height - self.height) / 2;
+        width: 2px;
+        height: 12px;
+        background: #5a5a60;
+    }
+
+    // Thumb
+    Rectangle {
+        x: thumb-x - self.width / 2;
+        y: 0;
+        width: 12px;
+        height: parent.height;
+        background: #c8c8d0;
+        border-color: #2b2b30;
+        border-width: 1px;
+        border-radius: 3px;
+    }
+
+    touch := TouchArea {
+        property <float> drag-frac: clamp(self.mouse-x / parent.width, 0, 1);
+        property <float> raw: root.minimum + drag-frac * (root.maximum - root.minimum);
+        // Snap to 0 within ~3 % of full range — gives a tactile center detent.
+        property <float> snap-tol: (root.maximum - root.minimum) * 0.03;
+        property <float> snapped: Math.abs(raw) < snap-tol ? 0 : raw;
+
+        pointer-event(ev) => {
+            if (ev.kind == PointerEventKind.down || self.pressed) {
+                root.value = snapped;
+                root.changed(snapped);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.value = snapped;
+                root.changed(snapped);
+            }
+        }
+    }
 }
 
 export component MainWindow inherits Window {
@@ -91,7 +176,16 @@ export component MainWindow inherits Window {
                                 vertical-alignment: center;
                                 font-size: 12px;
                             }
-                            if param.kind == 0: Slider {
+                            if param.kind == 0 && !param.bipolar: Slider {
+                                horizontal-stretch: 1;
+                                minimum: param.min;
+                                maximum: param.max;
+                                value: param.float-value;
+                                changed(v) => {
+                                    root.float-changed(param.path, v);
+                                }
+                            }
+                            if param.kind == 0 && param.bipolar: BipolarFader {
                                 horizontal-stretch: 1;
                                 minimum: param.min;
                                 maximum: param.max;

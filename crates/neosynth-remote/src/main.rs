@@ -165,6 +165,18 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// True for floats whose range is symmetric around zero (e.g. pan, balance).
+/// We detect by `min == -max` modulo a small relative tolerance, which means
+/// gain_db sliders (-60..+12) deliberately don't qualify — those are
+/// asymmetric attenuators and the linear slider feel is correct for them.
+fn is_bipolar(min: f32, max: f32) -> bool {
+    if min >= 0.0 || max <= 0.0 {
+        return false;
+    }
+    let range = max - min;
+    (min + max).abs() < 0.01 * range
+}
+
 fn parse_list_item(msg: &OscMessage) -> Option<Param> {
     // args: [path:str, type:"f"|"b", min:f, max:f, default:f]
     let mut it = msg.args.iter();
@@ -335,6 +347,7 @@ fn build_groups_model(
                                 max,
                                 float_value: value,
                                 bool_value: false,
+                                bipolar: is_bipolar(min, max),
                             }
                         }
                         ParamKind::Bool { default } => {
@@ -352,6 +365,7 @@ fn build_groups_model(
                                 max: 1.0,
                                 float_value: 0.0,
                                 bool_value: value,
+                                bipolar: false,
                             }
                         }
                     }
