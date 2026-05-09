@@ -71,7 +71,8 @@ ExecStart=/usr/bin/systemd-inhibit \
         --input-device hw:0,0,0 \
         --output-device hw:0,0,0 \
         --sample-rate 48000 \
-        --buffer-size 128 \
+        --buffer-size 88 \
+        --period-size 22 \
         --sample-format s24_3be \
         --audio-cpu 2 \
         --worker-cpu 3 \
