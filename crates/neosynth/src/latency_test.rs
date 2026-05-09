@@ -21,7 +21,6 @@ use crate::audio::{
 use anyhow::{Context, Result, anyhow};
 use std::io::{self, Write};
 
-const NUM_OUTPUT_CHANNELS: u32 = 2;
 /// Periods of silence before the impulse so ALSA buffers reach steady state.
 const SETTLE_PERIODS: usize = 16;
 /// Maximum frames to wait for the impulse before giving up (~3 s at 48 kHz).
@@ -40,6 +39,7 @@ pub fn run(
     buffer_size: Option<u32>,
     period_size: Option<u32>,
     num_input_channels: u32,
+    num_output_channels: u32,
     audio_cpu: usize,
 ) -> Result<()> {
     println!();
@@ -48,12 +48,13 @@ pub fn run(
     println!("================================================================");
     println!();
     println!(
-        " Settings: rate={} Hz, format={:?}, buffer={}, period={}, in_ch={}",
+        " Settings: rate={} Hz, format={:?}, buffer={}, period={}, in_ch={}, out_ch={}",
         sample_rate,
         sample_format,
         buffer_size.map_or("auto".into(), |b| b.to_string()),
         period_size.map_or("auto".into(), |p| p.to_string()),
         num_input_channels,
+        num_output_channels,
     );
     println!();
     println!(" Connect a cable from OUTPUT channel 1 to INPUT channel 1.");
@@ -75,7 +76,7 @@ pub fn run(
         input_device,
         output_device,
         num_input_channels,
-        num_output_channels: NUM_OUTPUT_CHANNELS,
+        num_output_channels,
         sample_rate,
         sample_format,
         buffer_size,
@@ -87,7 +88,7 @@ pub fn run(
     let buf_frames = input_pcm.hw_params_current()?.get_buffer_size()? as usize;
     let bps = sample_format.bytes_per_sample();
     let in_ch = num_input_channels as usize;
-    let out_ch = NUM_OUTPUT_CHANNELS as usize;
+    let out_ch = num_output_channels as usize;
 
     let in_period_bytes = period_frames * in_ch * bps;
     let out_period_bytes = period_frames * out_ch * bps;

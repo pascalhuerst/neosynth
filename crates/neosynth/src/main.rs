@@ -65,6 +65,13 @@ struct Cli {
     #[arg(long, default_value_t = 2)]
     input_channels: u32,
 
+    /// Number of output channels to open on the playback PCM. The mixer's
+    /// master is stereo: channel 0 carries master_l, channel 1 carries
+    /// master_r, channels 2+ are silent. Set this to whatever your soundcard
+    /// requires (e.g. 4 for an Audio4DJ-style multi-PCM combiner).
+    #[arg(long, default_value_t = 2)]
+    output_channels: u32,
+
     /// ALSA raw MIDI capture device, e.g. "hw:1,0,0". MIDI subsystem is
     /// skipped if not provided. Use `amidi -l` to list available devices.
     #[arg(long)]
@@ -146,17 +153,19 @@ fn main() -> Result<()> {
             cli.buffer_size,
             cli.period_size,
             cli.input_channels,
+            cli.output_channels,
             cli.audio_cpu,
         );
     }
 
     tracing::info!(
-        "Starting: input={}, output={}, sample_rate={}, sample_format={:?}, in_ch={}, buffer_size={:?}, period_size={:?}, audio_cpu={}, worker_cpu={}",
+        "Starting: input={}, output={}, sample_rate={}, sample_format={:?}, in_ch={}, out_ch={}, buffer_size={:?}, period_size={:?}, audio_cpu={}, worker_cpu={}",
         cli.input_device,
         cli.output_device,
         cli.sample_rate,
         cli.sample_format,
         cli.input_channels,
+        cli.output_channels,
         cli.buffer_size,
         cli.period_size,
         cli.audio_cpu,
@@ -202,6 +211,7 @@ fn main() -> Result<()> {
         engine.set_period_size(period);
     }
     engine.set_input_channels(cli.input_channels);
+    engine.set_output_channels(cli.output_channels);
 
     let audio_handles = engine.run(
         running.clone(),

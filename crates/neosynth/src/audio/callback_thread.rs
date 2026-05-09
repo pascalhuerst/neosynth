@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 
-const NUM_OUTPUT_CHANNELS: usize = 2;
 /// Cache prewarm cycles before we go live. Pushes zero buffers through the
 /// worker so its DSP code paths are hot when capture actually starts.
 const PREWARM_CYCLES: usize = 100;
@@ -23,6 +22,7 @@ pub struct CallbackThreadConfig {
     pub sample_rate: u32,
     pub sample_format: SampleFormat,
     pub num_input_channels: usize,
+    pub num_output_channels: usize,
     pub audio_cpu: usize,
 }
 
@@ -62,12 +62,13 @@ fn run_callback_loop(
         sample_rate,
         sample_format,
         num_input_channels,
+        num_output_channels,
         audio_cpu: _,
     } = cfg;
 
     let bps = sample_format.bytes_per_sample();
     let input_total = period_size * num_input_channels;
-    let output_total = period_size * NUM_OUTPUT_CHANNELS;
+    let output_total = period_size * num_output_channels;
 
     let mut input_bytes = vec![0u8; input_total * bps];
     let mut input_float = vec![0.0f32; input_total];
@@ -174,7 +175,7 @@ fn run_callback_loop(
         let popped = audio_out.pop_slice(&mut output_float);
         debug_assert_eq!(popped, output_total);
 
-        sample_format.encode_from_float(&output_float, &mut output_bytes, NUM_OUTPUT_CHANNELS);
+        sample_format.encode_from_float(&output_float, &mut output_bytes, num_output_channels);
 
         // Accumulate this period's load fraction; emit once per buffer.
         let cpu_usage_period = cpu_usage(t_work_start, period_size, sample_rate as usize);

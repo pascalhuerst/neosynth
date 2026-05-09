@@ -15,8 +15,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 
-const NUM_OUTPUT_CHANNELS: usize = 2;
-
 /// Spawn the DSP worker thread.
 ///
 /// The worker runs the entire mixer + reverb + stereo_delay chain. It owns the
@@ -28,10 +26,12 @@ const NUM_OUTPUT_CHANNELS: usize = 2;
 /// The worker busy-waits (spin loop) on input availability instead of
 /// sleeping — it lives on its own isolated core, so a yield would only cost
 /// us latency.
+#[allow(clippy::too_many_arguments)]
 pub fn start_worker_thread(
     sample_rate: u32,
     period_size: usize,
     num_input_channels: usize,
+    num_output_channels: usize,
     mut audio_in: SamplesRingBufferConsumer,
     mut audio_out: SamplesRingBufferProducer,
     mut ui_params: InputParameterRingBufferConsumer,
@@ -46,9 +46,13 @@ pub fn start_worker_thread(
         prioritize_thread();
 
         let input_total = period_size * num_input_channels;
-        let output_total = period_size * NUM_OUTPUT_CHANNELS;
+        let output_total = period_size * num_output_channels;
 
         let mut input_float = vec![0.0f32; input_total];
+        // `output_float` is initialised to 0 and we only write channels 0
+        // (master_l) and 1 (master_r). Channels 2..N stay zero forever, which
+        // is exactly what we want when the soundcard is opened with more
+        // outputs than the master mix has — extra channels carry silence.
         let mut output_float = vec![0.0f32; output_total];
         let mut frame: Vec<f32> = vec![0.0; num_input_channels];
 
@@ -62,7 +66,7 @@ pub fn start_worker_thread(
             "Worker thread loop running, period_size={}, in_ch={}, out_ch={}",
             period_size,
             num_input_channels,
-            NUM_OUTPUT_CHANNELS,
+            num_output_channels,
         );
 
         while running.load(Ordering::Relaxed) {
@@ -125,7 +129,9 @@ pub fn start_worker_thread(
                 mixer.finalize();
 
                 output_float[i] = mixer.master_l;
-                output_float[period_size + i] = mixer.master_r;
+                if num_output_channels >= 2 {
+                    output_float[period_size + i] = mixer.master_r;
+                }
             }
 
             // Publish per-bus levels (lock-free, latest-value-wins).
